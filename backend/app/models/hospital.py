@@ -1,3 +1,8 @@
+"""Hospital model — healthcare facilities that submit blood shortage requests.
+
+Location is stored as GEOGRAPHY(POINT, 4326) so the matching engine can
+compute donor-to-hospital distances via PostGIS spatial queries.
+"""
 import uuid
 
 from sqlalchemy import Boolean, Text

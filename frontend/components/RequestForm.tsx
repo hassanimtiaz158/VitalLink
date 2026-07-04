@@ -1,3 +1,9 @@
+/**
+ * RequestForm — Hospital shortage request form.
+ *
+ * Captures blood type, units needed, and urgency level. On submit,
+ * posts to POST /requests which triggers the matching engine.
+ */
 "use client";
 
 import { FormEvent, useState } from "react";

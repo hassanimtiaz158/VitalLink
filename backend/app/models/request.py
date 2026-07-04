@@ -1,3 +1,9 @@
+"""Request model — blood shortage requests submitted by hospitals.
+
+Lifecycle: open → donors_notified → partially_fulfilled → fulfilled → closed.
+CHECK constraints enforce valid blood types, urgency levels, and status values
+at the database level (mirrored in Pydantic schemas).
+"""
 import uuid
 from datetime import datetime
 

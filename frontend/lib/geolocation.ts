@@ -1,3 +1,9 @@
+/**
+ * Browser Geolocation API wrapper with typed error handling.
+ *
+ * Returns a discriminated union so callers can show specific error messages
+ * (e.g., "location denied" vs "location timed out") instead of a generic null.
+ */
 export interface GeoPosition {
   latitude: number;
   longitude: number;

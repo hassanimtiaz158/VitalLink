@@ -1,3 +1,10 @@
+/**
+ * LiveMap — Interactive Leaflet.js map showing hospital request locations.
+ *
+ * Markers are coloured by urgency (red=critical, amber=high, green=routine)
+ * and pulsing animations indicate critical requests. Uses OpenStreetMap tiles
+ * (no API key required).
+ */
 "use client";
 
 import { useEffect, useRef } from "react";

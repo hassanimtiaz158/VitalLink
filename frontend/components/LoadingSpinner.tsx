@@ -1,3 +1,6 @@
+/**
+ * LoadingSpinner — Animated loading indicator with accessible label.
+ */
 interface Props {
   label?: string;
 }

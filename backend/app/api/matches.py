@@ -1,3 +1,8 @@
+"""Match response endpoints — one-click "I can help" workflow.
+
+GET  /matches/{id}/respond — JWT-validated one-click response from email link.
+PATCH /matches/{id}/respond — API endpoint for explicit accept/decline.
+"""
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query

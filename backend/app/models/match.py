@@ -1,3 +1,9 @@
+"""Match model — donor–request pairings with response status tracking.
+
+Created automatically when a shortage request is submitted. Each match
+represents one donor who was notified about one request. The donor can
+respond via a signed JWT link (pending → accepted/declined).
+"""
 import uuid
 from datetime import datetime
 

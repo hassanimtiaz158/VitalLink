@@ -1,3 +1,9 @@
+/**
+ * SupplyCards — Blood supply level cards for the live dashboard.
+ *
+ * Displays each blood type as a coloured card with a progress bar,
+ * status label (Critical/Low/Stable), and available donor count.
+ */
 "use client";
 
 import type { SupplyStat } from "@/lib/api";

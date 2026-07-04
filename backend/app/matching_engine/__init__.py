@@ -1,3 +1,10 @@
+"""Blood-type compatibility matching engine with PostGIS geo-proximity search.
+
+Implements the core matching algorithm described in TDD §5:
+  1. Look up ABO/Rh-compatible donor blood types via COMPATIBILITY_MAP.
+  2. Filter available donors within an urgency-based radius (ST_DWithin).
+  3. Rank by distance (closest first), capped at MAX_MATCHES.
+"""
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 

@@ -1,3 +1,10 @@
+/**
+ * Hospital dashboard page — request submission and match tracking.
+ *
+ * Combines RequestForm (submit new shortage requests) with
+ * RequestDashboard (live match status updates via Supabase Realtime).
+ * Pre-selects a demo hospital from NEXT_PUBLIC_DEMO_HOSPITAL_ID.
+ */
 "use client";
 
 import { useState } from "react";

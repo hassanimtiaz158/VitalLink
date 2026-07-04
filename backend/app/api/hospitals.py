@@ -1,3 +1,7 @@
+"""Hospital registration endpoint.
+
+POST /hospitals — Register a healthcare facility with geolocation.
+"""
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException

@@ -1,3 +1,8 @@
+"""Centralised settings loaded from environment variables or a .env file.
+
+All secrets and deployment-specific values live here — no hard-coded
+credentials anywhere else in the codebase.
+"""
 from pydantic_settings import BaseSettings
 
 

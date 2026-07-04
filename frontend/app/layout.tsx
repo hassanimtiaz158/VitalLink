@@ -1,3 +1,7 @@
+/**
+ * Root layout — wraps all pages with IBM Plex Sans/Mono fonts and
+ * provides the top navigation bar. Server component (no "use client").
+ */
 import Link from "next/link";
 
 export const metadata = {

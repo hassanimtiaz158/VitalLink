@@ -1,6 +1,8 @@
 /**
- * Fetch wrapper with automatic timeout and network-error handling.
- * Returns a user-friendly error message on failure.
+ * AbortController-based fetch wrapper with configurable timeout.
+ *
+ * Converts low-level browser errors (AbortError, TypeError) into
+ * user-friendly messages suitable for display in UI error banners.
  */
 export async function fetchWithTimeout(
   input: RequestInfo | URL,

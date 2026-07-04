@@ -1,3 +1,6 @@
+/**
+ * ErrorBanner — Error message display with optional retry button.
+ */
 interface Props {
   message: string;
   onRetry?: () => void;

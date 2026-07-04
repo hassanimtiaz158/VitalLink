@@ -1,3 +1,11 @@
+/**
+ * Public live dashboard — real-time overview of all active requests.
+ *
+ * Displays SupplyCards (blood inventory levels), LiveMap (Leaflet.js
+ * map with urgency-coloured markers), ActivityFeed (recent requests),
+ * and RequestQueue (tabular view with progress bars). All data refreshes
+ * via Supabase Realtime subscriptions.
+ */
 "use client";
 
 import { useEffect, useState, useCallback } from "react";

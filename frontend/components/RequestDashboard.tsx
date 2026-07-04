@@ -1,3 +1,9 @@
+/**
+ * RequestDashboard — Match status panel for a specific request.
+ *
+ * Subscribes to Supabase Realtime for live match updates and displays
+ * donor response status (pending/accepted/declined) in a card grid.
+ */
 "use client";
 
 import { useEffect, useState } from "react";

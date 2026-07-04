@@ -1,3 +1,9 @@
+/**
+ * DonorForm — Registration form for new blood donors.
+ *
+ * Captures name, blood type, email, and geolocation (auto-detected or
+ * manual address fallback via Nominatim). Submits to POST /donors.
+ */
 "use client";
 
 import { FormEvent, useState } from "react";

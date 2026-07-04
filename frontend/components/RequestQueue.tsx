@@ -1,3 +1,9 @@
+/**
+ * RequestQueue — Tabular view of active shortage requests with progress bars.
+ *
+ * Shows each request's blood type, urgency, units needed, accepted donors,
+ * and a visual progress bar. Sorted by creation time (newest first).
+ */
 "use client";
 
 import type { ActiveRequest } from "@/lib/api";

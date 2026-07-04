@@ -1,3 +1,9 @@
+"""Shortage request endpoints — the core of the matching workflow.
+
+POST /requests          — Submit a shortage request and auto-match donors.
+GET  /requests/active   — Public feed of open requests for the live dashboard.
+GET  /requests/stats/supply — Aggregated donor supply levels per blood type.
+"""
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException

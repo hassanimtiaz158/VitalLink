@@ -1,3 +1,8 @@
+"""Pydantic v2 schemas for request validation and response serialisation.
+
+Blood type and urgency constraints are enforced via regex `pattern` fields
+to keep them in sync with the database CHECK constraints (TDD §3).
+"""
 from datetime import date, datetime
 from uuid import UUID
 

@@ -1,3 +1,9 @@
+"""SQLAlchemy engine, session factory, and declarative base.
+
+The engine is created once at import time using the DATABASE_URL from
+settings.  `get_db` is a FastAPI dependency that yields a scoped session
+and guarantees cleanup after each request.
+"""
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 

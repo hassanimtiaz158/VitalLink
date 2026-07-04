@@ -1,3 +1,8 @@
+"""Donor model — registered blood donors with ABO/Rh type and geolocation.
+
+GEOGRAPHY(POINT, 4326) is used for PostGIS ST_DWithin radius matching.
+The `available` flag allows donors to opt out without deleting their record.
+"""
 import uuid
 from datetime import date, datetime
 

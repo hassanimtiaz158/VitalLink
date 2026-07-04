@@ -1,3 +1,8 @@
+"""VitalLink API — FastAPI application entrypoint.
+
+Mounts all REST routes under / and exposes a /health endpoint for
+container orchestration and uptime monitoring.
+"""
 from fastapi import FastAPI
 
 from app.api import api_router

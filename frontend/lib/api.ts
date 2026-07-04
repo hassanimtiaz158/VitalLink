@@ -1,3 +1,9 @@
+/**
+ * Typed API client for the VitalLink FastAPI backend.
+ *
+ * Every fetch goes through fetchWithTimeout for automatic timeout handling
+ * and user-friendly error messages on network failures.
+ */
 import { fetchWithTimeout } from "./fetch-with-timeout";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";

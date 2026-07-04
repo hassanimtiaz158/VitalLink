@@ -1,3 +1,8 @@
+"""Donor registration and availability endpoints.
+
+POST   /donors              — Register a new donor with geolocation.
+PATCH  /donors/{id}/availability — Toggle availability flag.
+"""
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException

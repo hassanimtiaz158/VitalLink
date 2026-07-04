@@ -1,3 +1,8 @@
+/**
+ * Home page — donor registration form at "/".
+ *
+ * Server component that renders the DonorForm for new blood donor signups.
+ */
 import Link from "next/link";
 import DonorForm from "@/components/DonorForm";
 

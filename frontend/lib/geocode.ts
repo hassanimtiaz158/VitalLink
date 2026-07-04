@@ -1,3 +1,9 @@
+/**
+ * Free-text address geocoding via Nominatim (OpenStreetMap).
+ *
+ * No API key required — uses the public Nominatim endpoint with a
+ * User-Agent header as required by their usage policy.
+ */
 import type { GeoPosition } from "./geolocation";
 
 const NOMINATIM_URL = "https://nominatim.openstreetmap.org";

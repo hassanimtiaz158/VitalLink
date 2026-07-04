@@ -1,3 +1,8 @@
+/**
+ * EmptyState — Reusable placeholder shown when no data is available.
+ *
+ * Displays an optional icon, title, message, and action button.
+ */
 interface Props {
   icon?: string;
   title: string;

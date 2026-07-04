@@ -1,3 +1,10 @@
+/**
+ * ActivityFeed — Live event feed of recent shortage requests.
+ *
+ * Displays requests in reverse-chronological order with urgency badges,
+ * blood type, hospital name, and match count. Auto-updates via Supabase
+ * Realtime subscriptions.
+ */
 "use client";
 
 import type { ActiveRequest } from "@/lib/api";
