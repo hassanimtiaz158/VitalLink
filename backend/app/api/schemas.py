@@ -83,3 +83,24 @@ class RequestResponse(BaseModel):
     matched_donors: int
 
     model_config = {"from_attributes": True}
+
+
+# ---------------------------------------------------------------------------
+# Match schemas
+# ---------------------------------------------------------------------------
+class RespondToMatch(BaseModel):
+    response: str = Field(..., pattern=r"^(accepted|declined)$")
+    token: str = Field(..., min_length=1)
+
+
+class MatchResponse(BaseModel):
+    match_id: UUID
+    request_id: UUID
+    donor_id: UUID
+    response: str
+    notified_at: datetime | None
+    request_status: str
+    accepted_count: int
+    units_needed: int
+
+    model_config = {"from_attributes": True}
