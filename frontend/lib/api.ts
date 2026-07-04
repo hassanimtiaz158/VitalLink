@@ -1,3 +1,5 @@
+import { fetchWithTimeout } from "./fetch-with-timeout";
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 // ---------------------------------------------------------------------------
@@ -26,7 +28,7 @@ export interface DonorResponse {
 }
 
 export async function registerDonor(data: DonorCreate): Promise<DonorResponse> {
-  const res = await fetch(`${API_BASE}/donors`, {
+  const res = await fetchWithTimeout(`${API_BASE}/donors`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -57,7 +59,7 @@ export interface HospitalResponse {
 }
 
 export async function registerHospital(data: HospitalCreate): Promise<HospitalResponse> {
-  const res = await fetch(`${API_BASE}/hospitals`, {
+  const res = await fetchWithTimeout(`${API_BASE}/hospitals`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -91,7 +93,7 @@ export interface RequestResponse {
 }
 
 export async function createRequest(data: RequestCreate): Promise<RequestResponse> {
-  const res = await fetch(`${API_BASE}/requests`, {
+  const res = await fetchWithTimeout(`${API_BASE}/requests`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -122,13 +124,13 @@ export interface RequestWithMatches extends RequestResponse {
 }
 
 export async function getActiveRequests(): Promise<RequestResponse[]> {
-  const res = await fetch(`${API_BASE}/requests/active`);
+  const res = await fetchWithTimeout(`${API_BASE}/requests/active`);
   if (!res.ok) throw new Error(`Failed to fetch active requests (${res.status})`);
   return res.json();
 }
 
 export async function getRequestMatches(requestId: string): Promise<RequestWithMatches> {
-  const res = await fetch(`${API_BASE}/requests/${requestId}/matches`);
+  const res = await fetchWithTimeout(`${API_BASE}/requests/${requestId}/matches`);
   if (!res.ok) {
     const body = await res.json().catch(() => null);
     throw new Error(body?.detail ?? `Failed to fetch matches (${res.status})`);
@@ -163,13 +165,13 @@ export interface SupplyStat {
 }
 
 export async function getActiveRequestsFeed(): Promise<ActiveRequest[]> {
-  const res = await fetch(`${API_BASE}/requests/active`);
+  const res = await fetchWithTimeout(`${API_BASE}/requests/active`);
   if (!res.ok) throw new Error(`Failed to fetch active requests (${res.status})`);
   return res.json();
 }
 
 export async function getSupplyStats(): Promise<SupplyStat[]> {
-  const res = await fetch(`${API_BASE}/requests/stats/supply`);
+  const res = await fetchWithTimeout(`${API_BASE}/requests/stats/supply`);
   if (!res.ok) throw new Error(`Failed to fetch supply stats (${res.status})`);
   return res.json();
 }

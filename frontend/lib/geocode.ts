@@ -5,8 +5,8 @@ const NOMINATIM_URL = "https://nominatim.openstreetmap.org";
 /**
  * Geocode a free-text address to lat/lng via Nominatim (OpenStreetMap).
  *
- * Uses the `search` endpoint which accepts partial addresses, city names,
- * or structured queries. Returns the first result, or null if nothing found.
+ * Returns the first result, or null if nothing found or the request fails.
+ * Includes a timeout to prevent hanging on slow connections.
  */
 export async function geocodeAddress(address: string): Promise<GeoPosition | null> {
   if (!address.trim()) return null;
@@ -17,20 +17,29 @@ export async function geocodeAddress(address: string): Promise<GeoPosition | nul
     limit: "1",
   });
 
-  const res = await fetch(`${NOMINATIM_URL}/search?${params}`, {
-    headers: {
-      // Nominatim usage policy requires a valid User-Agent.
-      "User-Agent": "VitalLink/1.0 (hackathon demo)",
-    },
-  });
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
 
-  if (!res.ok) return null;
+    const res = await fetch(`${NOMINATIM_URL}/search?${params}`, {
+      headers: {
+        "User-Agent": "VitalLink/1.0 (hackathon demo)",
+      },
+      signal: controller.signal,
+    });
 
-  const results = await res.json();
-  if (!results.length) return null;
+    clearTimeout(timer);
 
-  return {
-    latitude: parseFloat(results[0].lat),
-    longitude: parseFloat(results[0].lon),
-  };
+    if (!res.ok) return null;
+
+    const results = await res.json();
+    if (!results.length) return null;
+
+    return {
+      latitude: parseFloat(results[0].lat),
+      longitude: parseFloat(results[0].lon),
+    };
+  } catch {
+    return null;
+  }
 }

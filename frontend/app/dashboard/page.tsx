@@ -3,6 +3,7 @@
 import { useState } from "react";
 import RequestForm from "@/components/RequestForm";
 import RequestDashboard from "@/components/RequestDashboard";
+import EmptyState from "@/components/EmptyState";
 import { type RequestResponse } from "@/lib/api";
 
 const DEMO_HOSPITAL_ID = process.env.NEXT_PUBLIC_DEMO_HOSPITAL_ID ?? "";
@@ -32,7 +33,7 @@ export default function DashboardPage() {
     <main style={mainStyle}>
       <h1 style={pageTitle}>Hospital Dashboard</h1>
 
-      {/* Hospital ID input (for demo — in production this comes from auth) */}
+      {/* Hospital ID input */}
       <div style={sectionStyle}>
         <label style={labelStyle}>
           Hospital ID
@@ -44,11 +45,25 @@ export default function DashboardPage() {
             placeholder="uuid from POST /hospitals"
           />
         </label>
+        {!hospitalId && (
+          <p style={{ fontSize: "0.8rem", color: "#92400e", margin: "0.5rem 0 0", backgroundColor: "#fef3c7", padding: "0.5rem 0.75rem", borderRadius: 6 }}>
+            Enter a hospital ID to post shortage requests. Register one first via POST /hospitals.
+          </p>
+        )}
       </div>
 
-      {hospitalId && (
+      {/* Request form — only when hospital ID is set */}
+      {hospitalId ? (
         <div style={sectionStyle}>
           <RequestForm hospitalId={hospitalId} onRequestCreated={handleCreated} />
+        </div>
+      ) : (
+        <div style={sectionStyle}>
+          <EmptyState
+            icon="&#127973;"
+            title="No hospital selected"
+            message="Enter your hospital ID above to start posting shortage requests and matching donors."
+          />
         </div>
       )}
 
@@ -86,6 +101,17 @@ export default function DashboardPage() {
               </span>
             </button>
           ))}
+        </div>
+      )}
+
+      {/* Empty state for no requests yet */}
+      {recentRequests.length === 0 && hospitalId && (
+        <div style={sectionStyle}>
+          <EmptyState
+            icon="&#128203;"
+            title="No requests posted yet"
+            message="Your shortage requests will appear here after you submit one above."
+          />
         </div>
       )}
     </main>

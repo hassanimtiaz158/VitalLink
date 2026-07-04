@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import {
   getActiveRequestsFeed,
   getSupplyStats,
@@ -12,60 +12,103 @@ import SupplyCards from "@/components/SupplyCards";
 import LiveMap from "@/components/LiveMap";
 import ActivityFeed from "@/components/ActivityFeed";
 import RequestQueue from "@/components/RequestQueue";
+import LoadingSpinner from "@/components/LoadingSpinner";
+import ErrorBanner from "@/components/ErrorBanner";
+import EmptyState from "@/components/EmptyState";
+
+type LoadState =
+  | { phase: "loading" }
+  | { phase: "error"; message: string }
+  | { phase: "ready"; requests: ActiveRequest[]; stats: SupplyStat[] };
 
 export default function LiveDashboard() {
-  const [requests, setRequests] = useState<ActiveRequest[]>([]);
-  const [stats, setStats] = useState<SupplyStat[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [state, setState] = useState<LoadState>({ phase: "loading" });
+
+  const fetchData = useCallback(async () => {
+    try {
+      const [reqs, s] = await Promise.all([getActiveRequestsFeed(), getSupplyStats()]);
+      setState({ phase: "ready", requests: reqs, stats: s });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to load dashboard data";
+      setState({ phase: "error", message: msg });
+    }
+  }, []);
 
   // Initial fetch
   useEffect(() => {
-    let active = true;
-    Promise.all([getActiveRequestsFeed(), getSupplyStats()])
-      .then(([reqs, s]) => {
-        if (active) {
-          setRequests(reqs);
-          setStats(s);
-          setLoading(false);
-        }
-      })
-      .catch(() => {
-        if (active) setLoading(false);
-      });
-    return () => { active = false; };
-  }, []);
+    fetchData();
+  }, [fetchData]);
 
-  // Poll for fresh data every 15s
+  // Poll for fresh data every 15s (only if ready)
   useEffect(() => {
+    if (state.phase !== "ready") return;
     const interval = setInterval(() => {
-      Promise.all([getActiveRequestsFeed(), getSupplyStats()])
-        .then(([reqs, s]) => {
-          setRequests(reqs);
-          setStats(s);
-        })
-        .catch(() => {});
+      fetchData();
     }, 15000);
     return () => clearInterval(interval);
-  }, []);
+  }, [state.phase, fetchData]);
 
   // Supabase Realtime — prepend new requests instantly
   useEffect(() => {
     const unsub = subscribeToNewRequests((row) => {
       const newReq = row as unknown as ActiveRequest;
-      setRequests((prev) => [newReq, ...prev]);
+      setState((prev) => {
+        if (prev.phase !== "ready") return prev;
+        return { ...prev, requests: [newReq, ...prev.requests] };
+      });
     });
     return unsub;
   }, []);
 
-  const criticalCount = requests.filter((r) => r.urgency === "critical").length;
-
-  if (loading) {
+  // --- Loading state ---
+  if (state.phase === "loading") {
     return (
       <div style={wrap}>
-        <p style={{ color: "#5C6D66" }}>Loading live dashboard\u2026</p>
+        <div style={header}>
+          <div style={brand}>
+            <div style={mark}>
+              <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ width: 20, height: 20 }}>
+                <path d="M12 2C12 2 5 10.5 5 15.5C5 19.09 8.13 22 12 22C15.87 22 19 19.09 19 15.5C19 10.5 12 2 12 2Z" fill="white"/>
+              </svg>
+            </div>
+            <div>
+              <h1 style={{ fontSize: 19, fontWeight: 600, margin: 0 }}>VitalLink</h1>
+              <p style={{ fontSize: 12.5, color: "#5C6D66", margin: "1px 0 0" }}>Loading live dashboard\u2026</p>
+            </div>
+          </div>
+        </div>
+        <div style={{ padding: "3rem 0" }}>
+          <LoadingSpinner label="Connecting to network\u2026" />
+        </div>
       </div>
     );
   }
+
+  // --- Error state ---
+  if (state.phase === "error") {
+    return (
+      <div style={wrap}>
+        <div style={header}>
+          <div style={brand}>
+            <div style={mark}>
+              <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ width: 20, height: 20 }}>
+                <path d="M12 2C12 2 5 10.5 5 15.5C5 19.09 8.13 22 12 22C15.87 22 19 19.09 19 15.5C19 10.5 12 2 12 2Z" fill="white"/>
+              </svg>
+            </div>
+            <div>
+              <h1 style={{ fontSize: 19, fontWeight: 600, margin: 0 }}>VitalLink</h1>
+              <p style={{ fontSize: 12.5, color: "#5C6D66", margin: "1px 0 0" }}>Connection error</p>
+            </div>
+          </div>
+        </div>
+        <ErrorBanner message={state.message} onRetry={fetchData} />
+      </div>
+    );
+  }
+
+  // --- Ready state ---
+  const { requests, stats } = state;
+  const criticalCount = requests.filter((r) => r.urgency === "critical").length;
 
   return (
     <div style={wrap}>
@@ -97,14 +140,29 @@ export default function LiveDashboard() {
 
       {/* Supply cards */}
       <p style={sectionLabel}>Regional supply levels</p>
-      <SupplyCards stats={stats} />
+      {stats.length > 0 ? (
+        <SupplyCards stats={stats} />
+      ) : (
+        <EmptyState
+          title="No supply data yet"
+          message="Donor supply levels will appear here once donors register."
+        />
+      )}
 
       {/* Map + Feed */}
       <div style={mainGrid}>
         <div style={panel}>
           <h2 style={panelTitle}>Active requests — map view</h2>
           <p style={panelSub}>Approximate hospital locations &middot; donor addresses are never shown publicly</p>
-          <LiveMap requests={requests} />
+          {requests.length > 0 ? (
+            <LiveMap requests={requests} />
+          ) : (
+            <EmptyState
+              icon="&#128205;"
+              title="No active requests"
+              message="Hospital shortage requests will appear on the map as they are posted."
+            />
+          )}
         </div>
         <div style={panel}>
           <h2 style={panelTitle}>Live activity feed</h2>
@@ -124,7 +182,7 @@ export default function LiveDashboard() {
 }
 
 // ---------------------------------------------------------------------------
-// Styles — matching demo_dashboard.html CSS variables
+// Styles
 // ---------------------------------------------------------------------------
 const wrap: React.CSSProperties = {
   maxWidth: 1180,

@@ -1,9 +1,10 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import { getCurrentPosition } from "@/lib/geolocation";
+import { getCurrentPosition, geoErrorMessage, type GeoError } from "@/lib/geolocation";
 import { geocodeAddress } from "@/lib/geocode";
 import { registerDonor, type DonorResponse } from "@/lib/api";
+import LoadingSpinner from "@/components/LoadingSpinner";
 
 const BLOOD_TYPES = ["O-", "O+", "A-", "A+", "B-", "B+", "AB-", "AB+"];
 
@@ -22,18 +23,22 @@ export default function DonorForm() {
   const [available, setAvailable] = useState(true);
   const [manualAddress, setManualAddress] = useState("");
   const [status, setStatus] = useState<Status>({ state: "idle" });
+  const [geoError, setGeoError] = useState<GeoError | null>(null);
 
   const [lat, setLat] = useState<number | null>(null);
   const [lng, setLng] = useState<number | null>(null);
 
   async function tryGeolocation(): Promise<boolean> {
     setStatus({ state: "locating" });
-    const pos = await getCurrentPosition();
-    if (pos) {
-      setLat(pos.latitude);
-      setLng(pos.longitude);
+    setGeoError(null);
+    const result = await getCurrentPosition();
+    if (result.position) {
+      setLat(result.position.latitude);
+      setLng(result.position.longitude);
+      setGeoError(null);
       return true;
     }
+    setGeoError(result.error);
     return false;
   }
 
@@ -44,6 +49,7 @@ export default function DonorForm() {
     if (pos) {
       setLat(pos.latitude);
       setLng(pos.longitude);
+      setGeoError(null);
       return true;
     }
     return false;
@@ -56,14 +62,16 @@ export default function DonorForm() {
     let located = await tryGeolocation();
 
     // 2. Fall back to manual address geocoding.
-    if (!located) {
+    if (!located && manualAddress.trim()) {
       located = await tryGeocode();
     }
 
     if (!located) {
       setStatus({
         state: "error",
-        message: "Could not determine location. Please enter a valid address.",
+        message: geoError
+          ? geoErrorMessage(geoError)
+          : "Could not determine location. Please enter a valid address below.",
       });
       return;
     }
@@ -88,9 +96,12 @@ export default function DonorForm() {
   if (status.state === "success") {
     return (
       <div style={cardStyle}>
-        <h2 style={headingStyle}>Registered!</h2>
-        <p>Thanks, <strong>{status.donor.name}</strong>. You&apos;re now in the donor pool.</p>
-        <p>Blood type: <strong>{status.donor.blood_type}</strong></p>
+        <div style={{ textAlign: "center", padding: "1rem 0" }}>
+          <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>&#10003;</div>
+          <h2 style={headingStyle}>Registered!</h2>
+          <p>Thanks, <strong>{status.donor.name}</strong>. You&apos;re now in the donor pool.</p>
+          <p>Blood type: <strong>{status.donor.blood_type}</strong></p>
+        </div>
         <button
           onClick={() => {
             setStatus({ state: "idle" });
@@ -99,6 +110,7 @@ export default function DonorForm() {
             setManualAddress("");
             setLat(null);
             setLng(null);
+            setGeoError(null);
           }}
           style={btnSecondary}
         >
@@ -167,32 +179,45 @@ export default function DonorForm() {
 
       {/* Manual Address Fallback */}
       <label style={labelStyle}>
-        Address (fallback if browser location denied)
+        Address {geoError && <span style={{ fontWeight: 400, color: "#6b7280" }}>(required — browser location unavailable)</span>}
         <input
           type="text"
           value={manualAddress}
           onChange={(e) => setManualAddress(e.target.value)}
-          style={inputStyle}
-          placeholder="123 Main St, Springfield, IL"
+          style={{
+            ...inputStyle,
+            borderColor: geoError ? "#f59e0b" : undefined,
+          }}
+          placeholder="123 Main St, New York, NY"
+          required={!!geoError}
         />
       </label>
 
       {/* Location preview */}
       {lat !== null && lng !== null && (
-        <p style={{ fontSize: "0.85rem", color: "#6b7280", margin: 0 }}>
-          Location: {lat.toFixed(5)}, {lng.toFixed(5)}
+        <p style={{ fontSize: "0.8rem", color: "#6b7280", margin: "0 0 0.5rem" }}>
+          &#10003; Location acquired: {lat.toFixed(5)}, {lng.toFixed(5)}
+        </p>
+      )}
+
+      {/* Geolocation guidance */}
+      {geoError && status.state !== "error" && (
+        <p style={{ fontSize: "0.8rem", color: "#92400e", margin: "0 0 0.5rem", backgroundColor: "#fef3c7", padding: "0.5rem 0.75rem", borderRadius: 6 }}>
+          {geoErrorMessage(geoError)}
         </p>
       )}
 
       {/* Error */}
       {status.state === "error" && (
-        <p style={{ color: "#dc2626", margin: "0.5rem 0" }}>{status.message}</p>
+        <div style={{ backgroundColor: "#FBEAEA", border: "1px solid #F5D0D0", borderRadius: 8, padding: "0.75rem 1rem", margin: "0.5rem 0" }}>
+          <p style={{ color: "#7A0A1D", margin: 0, fontSize: "0.85rem" }}>{status.message}</p>
+        </div>
       )}
 
       <button type="submit" disabled={isBusy} style={btnPrimary}>
-        {status.state === "locating" && "Detecting location\u2026"}
-        {status.state === "geocoding" && "Looking up address\u2026"}
-        {status.state === "submitting" && "Registering\u2026"}
+        {status.state === "locating" && <LoadingSpinner label="Detecting location\u2026" />}
+        {status.state === "geocoding" && <LoadingSpinner label="Looking up address\u2026" />}
+        {status.state === "submitting" && <LoadingSpinner label="Registering\u2026" />}
         {status.state === "idle" && "Register as Donor"}
         {status.state === "error" && "Try Again"}
       </button>
@@ -201,7 +226,7 @@ export default function DonorForm() {
 }
 
 // ---------------------------------------------------------------------------
-// Inline styles (no Tailwind dependency for hackathon speed)
+// Inline styles
 // ---------------------------------------------------------------------------
 const cardStyle: React.CSSProperties = {
   maxWidth: 480,
@@ -246,6 +271,11 @@ const btnPrimary: React.CSSProperties = {
   fontWeight: 600,
   cursor: "pointer",
   marginTop: "0.5rem",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: "0.5rem",
+  minHeight: 44,
 };
 
 const btnSecondary: React.CSSProperties = {
