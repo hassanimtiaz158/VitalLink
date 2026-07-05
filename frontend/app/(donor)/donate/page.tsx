@@ -66,9 +66,15 @@ export default function DonateLandingPage() {
         <Link href="/donate/register" style={{ ...ctaBtn, backgroundColor: TEAL }}>
           Register as a donor
         </Link>
-        <Link href={hasId ? "/donate/dashboard" : "/donate/register"} style={secondaryBtn}>
-          View my dashboard
-        </Link>
+        {hasId ? (
+          <button onClick={() => { window.location.href = "/donate/dashboard"; }} style={secondaryBtn}>
+            View my dashboard
+          </button>
+        ) : (
+          <Link href="/donate/register" style={secondaryBtn}>
+            View my dashboard
+          </Link>
+        )}
         <p style={{ fontSize: "0.75rem", color: "#9CA3AF", textAlign: "center", margin: "0.25rem 0 0" }}>
           {hasId
             ? "You are registered — your dashboard shows match requests and impact."

@@ -18,6 +18,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <style>{`
           @keyframes blink { 0%,100%{opacity:1;} 50%{opacity:0.25;} }
           @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.4;} }
+          @keyframes pulse-bg { 0%,100%{background-color:#FFF5F5;} 50%{background-color:#FEE2E2;} }
           @keyframes spin { 0%{transform:rotate(0deg);} 100%{transform:rotate(360deg);} }
           @media(max-width:860px) {
             .live-main-grid { grid-template-columns: 1fr !important; }

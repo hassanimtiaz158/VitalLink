@@ -7,7 +7,6 @@
 "use client";
 
 import { FormEvent, useState } from "react";
-import { useRouter } from "next/navigation";
 import { getCurrentPosition, geoErrorMessage, type GeoError } from "@/lib/geolocation";
 import { geocodeAddress } from "@/lib/geocode";
 import { registerDonor, type DonorResponse } from "@/lib/api";
@@ -238,11 +237,9 @@ export default function DonorForm() {
 // ---------------------------------------------------------------------------
 
 function SuccessCard({ donor }: { donor: DonorResponse }) {
-  const router = useRouter();
-
   function goToDashboard() {
     localStorage.setItem("vitallink_donor_id", donor.donor_id);
-    router.push("/donate/dashboard");
+    window.location.href = "/donate/dashboard";
   }
 
   return (

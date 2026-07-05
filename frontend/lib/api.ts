@@ -64,13 +64,19 @@ export async function registerDonor(data: DonorCreate): Promise<DonorResponse> {
 
 export async function getDonor(donorId: string): Promise<DonorResponse> {
   const res = await fetchWithTimeout(`${API_BASE}/donors/${donorId}`);
-  if (!res.ok) throw new Error(`Donor not found (${res.status})`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(extractError(body, `Donor not found (${res.status})`));
+  }
   return res.json();
 }
 
 export async function listDonors(): Promise<DonorResponse[]> {
   const res = await fetchWithTimeout(`${API_BASE}/donors`, { timeoutMs: 15000 });
-  if (!res.ok) throw new Error(`Failed to fetch donors (${res.status})`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(extractError(body, `Failed to fetch donors (${res.status})`));
+  }
   return res.json();
 }
 
@@ -83,7 +89,10 @@ export async function updateDonorAvailability(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ available }),
   });
-  if (!res.ok) throw new Error(`Failed to update availability (${res.status})`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(extractError(body, `Failed to update availability (${res.status})`));
+  }
   return res.json();
 }
 
@@ -120,7 +129,10 @@ export interface DonorMatchesResponse {
 
 export async function getDonorMatches(donorId: string): Promise<DonorMatchesResponse> {
   const res = await fetchWithTimeout(`${API_BASE}/donors/${donorId}/matches`);
-  if (!res.ok) throw new Error(`Failed to fetch donor matches (${res.status})`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(extractError(body, `Failed to fetch donor matches (${res.status})`));
+  }
   return res.json();
 }
 
