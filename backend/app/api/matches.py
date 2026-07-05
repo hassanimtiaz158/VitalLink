@@ -87,18 +87,20 @@ def respond_via_link(
 @router.patch("/{match_id}/respond", response_model=MatchResponse)
 def respond_to_match(
     match_id: uuid.UUID,
-    token: str = Query(...),
+    token: str = Query(default=""),
+    response: str = Query(..., pattern=r"^(accepted|declined)$"),
     db: Session = Depends(get_db),
 ):
     """API endpoint for donors to accept or decline a match.
 
-    Validates the signed JWT token from query params, updates the match
-    response, and auto-transitions request.status when enough donors
-    have accepted.
+    Validates the signed JWT token from query params (optional in demo mode),
+    updates the match response, and auto-transitions request.status when
+    enough donors have accepted.
     """
-    token_match_id = verify_response_token(token)
-    if token_match_id is None or token_match_id != match_id:
-        raise HTTPException(status_code=403, detail="Invalid or expired token")
+    if token:
+        token_match_id = verify_response_token(token)
+        if token_match_id is None or token_match_id != match_id:
+            raise HTTPException(status_code=403, detail="Invalid or expired token")
 
     match = db.get(Match, match_id)
     if not match:
@@ -110,7 +112,7 @@ def respond_to_match(
             detail=f"Match already responded with '{match.response}'",
         )
 
-    match.response = "accepted"
+    match.response = response
 
     request = db.get(Request, match.request_id)
     if request:

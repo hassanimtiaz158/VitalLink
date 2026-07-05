@@ -3,16 +3,20 @@
  *
  * Subscribes to Supabase Realtime for live match updates and displays
  * donor response status (pending/accepted/declined) in a card grid.
+ * Includes a verify button for patient requests that hospital staff can
+ * use to confirm the request is legitimate before donors are notified.
  */
 "use client";
 
 import { useEffect, useState } from "react";
 import {
   getRequestMatches,
+  verifyRequest,
   type RequestWithMatches,
   type MatchDetail,
 } from "@/lib/api";
 import { subscribeToMatches } from "@/lib/supabase";
+import { StatusBadge, ResponseChip, ProgressBar, LiveIndicator } from "@/components/shared";
 
 interface Props {
   requestId: string;
@@ -22,6 +26,8 @@ interface Props {
 export default function RequestDashboard({ requestId, onBack }: Props) {
   const [data, setData] = useState<RequestWithMatches | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [verifyLoading, setVerifyLoading] = useState(false);
+  const [verifyError, setVerifyError] = useState<string | null>(null);
 
   // Initial fetch
   useEffect(() => {
@@ -40,7 +46,6 @@ export default function RequestDashboard({ requestId, onBack }: Props) {
         const updated = row as unknown as MatchDetail;
         const exists = prev.matches.find((m) => m.match_id === updated.match_id);
         if (exists) {
-          // Update existing match response
           return {
             ...prev,
             matches: prev.matches.map((m) =>
@@ -48,7 +53,6 @@ export default function RequestDashboard({ requestId, onBack }: Props) {
             ),
           };
         }
-        // New match inserted
         return {
           ...prev,
           matches: [...prev.matches, updated],
@@ -57,6 +61,23 @@ export default function RequestDashboard({ requestId, onBack }: Props) {
     });
     return unsub;
   }, [requestId]);
+
+  // Hospital staff can verify patient requests directly
+  async function handleVerify() {
+    if (!data?.verification_code) return;
+    setVerifyLoading(true);
+    setVerifyError(null);
+    try {
+      await verifyRequest(requestId, data.verification_code);
+      const updated = await getRequestMatches(requestId);
+      setData(updated);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Verification failed";
+      setVerifyError(msg);
+    } finally {
+      setVerifyLoading(false);
+    }
+  }
 
   if (error) return <div style={cardStyle}><p style={{ color: "#dc2626" }}>{error}</p></div>;
   if (!data) return <div style={cardStyle}><p>Loading\u2026</p></div>;
@@ -81,8 +102,32 @@ export default function RequestDashboard({ requestId, onBack }: Props) {
             {data.units_needed} units needed &middot; {data.urgency}
           </p>
         </div>
-        <StatusBadge status={data.status} />
+        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+          <StatusBadge status={data.status} />
+          {!data.verified_by_hospital && data.requester_type === "patient" && (
+            <button
+              onClick={handleVerify}
+              disabled={verifyLoading}
+              style={verifyBtn}
+            >
+              {verifyLoading ? "Verifying\u2026" : "Verify request"}
+            </button>
+          )}
+        </div>
       </div>
+
+      {verifyError && (
+        <p style={{ color: "#dc2626", fontSize: "0.8rem", margin: "0.5rem 0 0" }}>{verifyError}</p>
+      )}
+
+      {!data.verified_by_hospital && data.requester_type === "patient" && (
+        <div style={verifyNotice}>
+          <p style={{ margin: 0, fontSize: "0.85rem", color: "#92400e", lineHeight: 1.4 }}>
+            This patient request is unverified. Donors will not be notified until it is verified.
+            {!data.verification_code ? "" : ` Code: ${data.verification_code}`}
+          </p>
+        </div>
+      )}
 
       {/* Summary cards */}
       <div style={summaryRow}>
@@ -93,15 +138,10 @@ export default function RequestDashboard({ requestId, onBack }: Props) {
       </div>
 
       {/* Progress bar */}
-      <div style={progressTrack}>
-        <div
-          style={{
-            ...progressFill,
-            width: `${Math.min((accepted / data.units_needed) * 100, 100)}%`,
-            backgroundColor: accepted >= data.units_needed ? "#16a34a" : "#f59e0b",
-          }}
-        />
-      </div>
+      <ProgressBar
+        percent={Math.min((accepted / data.units_needed) * 100, 100)}
+        color={accepted >= data.units_needed ? "#16a34a" : "#f59e0b"}
+      />
       <p style={{ margin: "0.5rem 0 0", fontSize: "0.8rem", color: "#6b7280" }}>
         {accepted}/{data.units_needed} accepted
       </p>
@@ -121,14 +161,14 @@ export default function RequestDashboard({ requestId, onBack }: Props) {
             {data.matches.map((m) => (
               <tr key={m.match_id} style={trStyle}>
                 <td style={tdStyle}>{m.donor_name ?? m.donor_id.slice(0, 8)}</td>
-                <td style={tdStyle}>{m.donor_blood_type ?? "—"}</td>
+                <td style={tdStyle}>{m.donor_blood_type ?? "\u2014"}</td>
                 <td style={tdStyle}>
                   <ResponseChip response={m.response} />
                 </td>
                 <td style={{ ...tdStyle, fontSize: "0.8rem", color: "#6b7280" }}>
                   {m.notified_at
                     ? new Date(m.notified_at).toLocaleTimeString()
-                    : "—"}
+                    : "\u2014"}
                 </td>
               </tr>
             ))}
@@ -143,72 +183,22 @@ export default function RequestDashboard({ requestId, onBack }: Props) {
       )}
 
       {/* Live indicator */}
-      <div style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginTop: "1rem" }}>
-        <span style={liveDot} />
-        <span style={{ fontSize: "0.75rem", color: "#6b7280" }}>Live updates via Supabase Realtime</span>
+      <div style={{ marginTop: "1rem" }}>
+        <LiveIndicator color="#16a34a" label="Live updates via Supabase Realtime" />
       </div>
     </div>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Sub-components
+// Sub-components (local — only the stat grid for this layout)
 // ---------------------------------------------------------------------------
-
-function StatusBadge({ status }: { status: string }) {
-  const colors: Record<string, string> = {
-    open: "#dbeafe",
-    donors_notified: "#fef3c7",
-    partially_fulfilled: "#fed7aa",
-    fulfilled: "#bbf7d0",
-    closed: "#e5e7eb",
-  };
-  return (
-    <span
-      style={{
-        padding: "0.25rem 0.75rem",
-        borderRadius: 999,
-        fontSize: "0.75rem",
-        fontWeight: 600,
-        backgroundColor: colors[status] ?? "#f3f4f6",
-        textTransform: "capitalize",
-      }}
-    >
-      {status.replace(/_/g, " ")}
-    </span>
-  );
-}
-
 function StatCard({ label, value, color }: { label: string; value: number; color: string }) {
   return (
     <div style={{ textAlign: "center", flex: 1 }}>
       <div style={{ fontSize: "1.5rem", fontWeight: 700, color }}>{value}</div>
       <div style={{ fontSize: "0.75rem", color: "#6b7280" }}>{label}</div>
     </div>
-  );
-}
-
-function ResponseChip({ response }: { response: string }) {
-  const colors: Record<string, { bg: string; fg: string }> = {
-    pending: { bg: "#fef3c7", fg: "#92400e" },
-    accepted: { bg: "#bbf7d0", fg: "#166534" },
-    declined: { bg: "#fecaca", fg: "#991b1b" },
-  };
-  const c = colors[response] ?? { bg: "#f3f4f6", fg: "#374151" };
-  return (
-    <span
-      style={{
-        padding: "0.15rem 0.5rem",
-        borderRadius: 6,
-        fontSize: "0.75rem",
-        fontWeight: 600,
-        backgroundColor: c.bg,
-        color: c.fg,
-        textTransform: "capitalize",
-      }}
-    >
-      {response}
-    </span>
   );
 }
 
@@ -241,19 +231,6 @@ const summaryRow: React.CSSProperties = {
   backgroundColor: "#f9fafb",
 };
 
-const progressTrack: React.CSSProperties = {
-  height: 8,
-  borderRadius: 4,
-  backgroundColor: "#e5e7eb",
-  overflow: "hidden",
-};
-
-const progressFill: React.CSSProperties = {
-  height: "100%",
-  borderRadius: 4,
-  transition: "width 0.4s ease",
-};
-
 const tableStyle: React.CSSProperties = {
   width: "100%",
   borderCollapse: "collapse",
@@ -276,10 +253,21 @@ const tdStyle: React.CSSProperties = {
 
 const trStyle: React.CSSProperties = {};
 
-const liveDot: React.CSSProperties = {
-  width: 8,
-  height: 8,
-  borderRadius: "50%",
+const verifyBtn: React.CSSProperties = {
+  padding: "0.35rem 0.75rem",
+  border: "none",
+  borderRadius: 6,
   backgroundColor: "#16a34a",
-  animation: "pulse 1.5s infinite",
+  color: "#fff",
+  fontSize: "0.75rem",
+  fontWeight: 600,
+  cursor: "pointer",
+};
+
+const verifyNotice: React.CSSProperties = {
+  padding: "0.65rem 0.85rem",
+  backgroundColor: "#FEF3C7",
+  border: "1px solid #F5D0A0",
+  borderRadius: 8,
+  marginTop: "0.75rem",
 };

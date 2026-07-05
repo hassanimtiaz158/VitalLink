@@ -131,10 +131,21 @@ class RequestResponse(BaseModel):
     units_needed: int
     urgency: str
     status: str
+    verified_by_hospital: bool
+    verification_code: str | None = None
     created_at: datetime
     matched_donors: int
 
     model_config = {"from_attributes": True}
+
+
+class VerifyRequest(BaseModel):
+    """Verify a patient-submitted request using the short code from hospital staff.
+
+    Hospital requests skip this step entirely — they are verified from creation
+    because hospital staff have already confirmed the need is real.
+    """
+    code: str = Field(..., min_length=1, max_length=8)
 
 
 # ---------------------------------------------------------------------------

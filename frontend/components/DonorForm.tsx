@@ -6,7 +6,8 @@
  */
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
+import Link from "next/link";
 import { getCurrentPosition, geoErrorMessage, type GeoError } from "@/lib/geolocation";
 import { geocodeAddress } from "@/lib/geocode";
 import { registerDonor, type DonorResponse } from "@/lib/api";
@@ -64,7 +65,7 @@ export default function DonorForm() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
 
-    // 1. Try browser geolocation first.
+    // 1. Try browser geolocation first (may fail on localhost / HTTP).
     let located = await tryGeolocation();
 
     // 2. Fall back to manual address geocoding.
@@ -77,7 +78,7 @@ export default function DonorForm() {
         state: "error",
         message: geoError
           ? geoErrorMessage(geoError)
-          : "Could not determine location. Please enter a valid address below.",
+          : "Could not determine location. Please enter your address below and try again.",
       });
       return;
     }
@@ -100,41 +101,9 @@ export default function DonorForm() {
   }
 
   if (status.state === "success") {
-    // Save donor ID to localStorage for the dashboard
-    if (typeof window !== "undefined") {
-      localStorage.setItem("vitallink_donor_id", status.donor.donor_id);
-    }
-
     return (
       <div style={cardStyle}>
-        <div style={{ textAlign: "center", padding: "1rem 0" }}>
-          <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>&#10003;</div>
-          <h2 style={headingStyle}>Registered!</h2>
-          <p>Thanks, <strong>{status.donor.name}</strong>. You&apos;re now in the donor pool.</p>
-          <p>Blood type: <strong>{status.donor.blood_type}</strong></p>
-          <p style={{ fontSize: "0.8rem", color: "#5C6D66" }}>
-            Your donor ID: <code style={{ backgroundColor: "#F3F4F6", padding: "2px 6px", borderRadius: 4 }}>{status.donor.donor_id}</code>
-          </p>
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-          <a href="/donate/dashboard" style={btnPrimary}>
-            View your dashboard
-          </a>
-          <button
-            onClick={() => {
-              setStatus({ state: "idle" });
-              setName("");
-              setEmail("");
-              setManualAddress("");
-              setLat(null);
-              setLng(null);
-              setGeoError(null);
-            }}
-            style={btnSecondary}
-          >
-            Register Another
-          </button>
-        </div>
+        <SuccessCard donor={status.donor} />
       </div>
     );
   }
@@ -144,6 +113,13 @@ export default function DonorForm() {
   return (
     <form onSubmit={handleSubmit} style={cardStyle}>
       <h2 style={headingStyle}>Donor Registration</h2>
+
+      {/* Location hint for localhost */}
+      {typeof window !== "undefined" && window.location.protocol === "http:" && (
+        <p style={{ fontSize: "0.8rem", color: "#5C6D66", backgroundColor: "#F0FAF8", padding: "0.5rem 0.75rem", borderRadius: 6, margin: "0 0 1rem", lineHeight: 1.4 }}>
+          Running on localhost? Browser location may be unavailable. Enter your address manually below.
+        </p>
+      )}
 
       {/* Name */}
       <label style={labelStyle}>
@@ -198,7 +174,7 @@ export default function DonorForm() {
 
       {/* Manual Address Fallback */}
       <label style={labelStyle}>
-        Address {geoError && <span style={{ fontWeight: 400, color: "#6b7280" }}>(required — browser location unavailable)</span>}
+        Address {geoError && <span style={{ fontWeight: 400, color: "#92400e" }}>(required — browser location unavailable on this device)</span>}
         <input
           type="text"
           value={manualAddress}
@@ -206,10 +182,16 @@ export default function DonorForm() {
           style={{
             ...inputStyle,
             borderColor: geoError ? "#f59e0b" : undefined,
+            backgroundColor: geoError ? "#FFFBEB" : undefined,
           }}
-          placeholder="123 Main St, New York, NY"
+          placeholder="e.g. Mount Sinai Hospital, New York, NY"
           required={!!geoError}
         />
+        {geoError && (
+          <span style={{ fontSize: "0.75rem", color: "#92400e", marginTop: "0.25rem" }}>
+            Enter a hospital or street address so we can match you with nearby requests.
+          </span>
+        )}
       </label>
 
       {/* Location preview */}
@@ -228,8 +210,13 @@ export default function DonorForm() {
 
       {/* Error */}
       {status.state === "error" && (
-        <div style={{ backgroundColor: "#FBEAEA", border: "1px solid #F5D0D0", borderRadius: 8, padding: "0.75rem 1rem", margin: "0.5rem 0" }}>
-          <p style={{ color: "#7A0A1D", margin: 0, fontSize: "0.85rem" }}>{status.message}</p>
+        <div style={{ backgroundColor: "#FBEAEA", border: "2px solid #F5D0D0", borderRadius: 8, padding: "1rem 1.25rem", margin: "0.5rem 0" }}>
+          <p style={{ color: "#7A0A1D", margin: 0, fontSize: "0.9rem", fontWeight: 500 }}>{status.message}</p>
+          {!manualAddress.trim() && (
+            <p style={{ color: "#7A0A1D", margin: "0.5rem 0 0", fontSize: "0.8rem" }}>
+              Tip: Enter your address below so we can locate you without browser location access.
+            </p>
+          )}
         </div>
       )}
 
@@ -247,6 +234,33 @@ export default function DonorForm() {
 // ---------------------------------------------------------------------------
 // Inline styles
 // ---------------------------------------------------------------------------
+
+function SuccessCard({ donor }: { donor: DonorResponse }) {
+  const [reset, setReset] = useState<(() => void) | null>(null);
+
+  useEffect(() => {
+    localStorage.setItem("vitallink_donor_id", donor.donor_id);
+  }, [donor.donor_id]);
+
+  return (
+    <>
+      <div style={{ textAlign: "center", padding: "1rem 0" }}>
+        <div style={{ fontSize: "2rem", marginBottom: "0.5rem" }}>&#10003;</div>
+        <h2 style={headingStyle}>Registered!</h2>
+        <p>Thanks, <strong>{donor.name}</strong>. You&apos;re now in the donor pool.</p>
+        <p>Blood type: <strong>{donor.blood_type}</strong></p>
+        <p style={{ fontSize: "0.8rem", color: "#5C6D66" }}>
+          Your donor ID: <code style={{ backgroundColor: "#F3F4F6", padding: "2px 6px", borderRadius: 4 }}>{donor.donor_id}</code>
+        </p>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+        <Link href="/donate/dashboard" style={btnPrimary}>
+          View your dashboard
+        </Link>
+      </div>
+    </>
+  );
+}
 const cardStyle: React.CSSProperties = {
   maxWidth: 480,
   margin: "2rem auto",

@@ -6,6 +6,18 @@ at the database level (mirrored in Pydantic schemas).
 
 A request belongs to exactly one of: hospital (via hospital_id) or patient
 (via patient_id). The requester_type column discriminates between the two.
+
+Trust model (verified_by_hospital):
+  Hospital requests are created with verified_by_hospital=True — the hospital
+  staff have confirmed the need is real as part of clinical workflow.
+
+  Patient requests are created with verified_by_hospital=False and a short
+  verification_code. The patient enters this code (obtained from hospital
+  staff during triage) to unlock the request. This prevents false or duplicate
+  requests from wasting donor notifications — a critical safeguard because
+  donors receive real email alerts and may rearrange their schedules.
+
+  See migration 003_add_verification.sql for full rationale.
 """
 import uuid
 from datetime import datetime
@@ -60,6 +72,11 @@ class Request(Base):
     units_needed: Mapped[int] = mapped_column(Integer, nullable=False)
     # Determines match radius: critical=30km, high=15km, routine=8km.
     urgency: Mapped[str] = mapped_column(Text, nullable=False)
+    # Trust verification — hospital requests start verified, patient requests
+    # start unverified and require a short code from hospital staff.
+    # See migration 003_add_verification.sql for rationale.
+    verified_by_hospital: Mapped[bool] = mapped_column(default=False)
+    verification_code: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Lifecycle state machine — transitions via application logic.
     status: Mapped[str] = mapped_column(Text, default="open")
     created_at: Mapped[datetime] = mapped_column(

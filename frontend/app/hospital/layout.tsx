@@ -1,8 +1,10 @@
 /**
  * Hospital route group layout — neutral (slate) accent.
  *
- * Wraps the hospital dashboard with a neutral-toned header and
- * navigation back to the landing page.
+ * Wraps hospital dashboard pages with a neutral-toned header.
+ * Nav is hospital-only: no donor or patient links exposed.
+ * Hospital staff don't need to see "Want to donate?" or "Need blood?" —
+ * those are for the public-facing flows.
  */
 import Link from "next/link";
 
@@ -26,9 +28,11 @@ export default function HospitalLayout({ children }: { children: React.ReactNode
             <p style={{ fontSize: 12.5, color: "#5C6D66", margin: "1px 0 0" }}>Hospital dashboard</p>
           </div>
         </div>
-        <div style={{ display: "flex", gap: "1rem" }}>
+        <nav style={{ display: "flex", gap: "1rem" }}>
+          <Link href="/hospital/dashboard" style={navLink}>Dashboard</Link>
+          <Link href="/hospital/requests/new" style={navLink}>New request</Link>
           <Link href="/live" style={navLink}>Live dashboard</Link>
-        </div>
+        </nav>
       </header>
       {children}
     </div>

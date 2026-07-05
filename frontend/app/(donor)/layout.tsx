@@ -2,12 +2,12 @@
  * Donor route group layout — teal accent.
  *
  * Wraps the donor registration flow with a teal-accented header
- * and navigation back to the landing page.
+ * and navigation back to the landing page. Nav is donor-only:
+ * no patient or hospital links exposed.
  */
 import Link from "next/link";
 
 const TEAL = "#1B7F79";
-const TEAL_LIGHT = "#E4F1EE";
 
 export const metadata = {
   title: "VitalLink — Donate",
@@ -29,10 +29,11 @@ export default function DonorLayout({ children }: { children: React.ReactNode })
             <p style={{ fontSize: 12.5, color: "#5C6D66", margin: "1px 0 0" }}>Donor registration</p>
           </div>
         </div>
-        <div style={{ display: "flex", gap: "1rem" }}>
-          <Link href="/request-help" style={navLink}>Need blood?</Link>
+        <nav style={{ display: "flex", gap: "1rem" }}>
+          <Link href="/donate" style={navLink}>Register</Link>
+          <Link href="/donate/dashboard" style={navLink}>Dashboard</Link>
           <Link href="/live" style={navLink}>Live dashboard</Link>
-        </div>
+        </nav>
       </header>
       <div style={{ maxWidth: 560, margin: "0 auto", padding: "2rem 1rem 4rem" }}>
         {children}

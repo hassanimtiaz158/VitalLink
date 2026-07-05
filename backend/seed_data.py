@@ -124,11 +124,12 @@ def random_email(name: str) -> str:
 
 
 def clear_db(session: Session) -> None:
-    """Delete all rows from matches, requests, donors, hospitals."""
+    """Delete all rows from matches, requests, donors, hospitals, patients."""
     session.execute(text("DELETE FROM matches"))
     session.execute(text("DELETE FROM requests"))
     session.execute(text("DELETE FROM donors"))
     session.execute(text("DELETE FROM hospitals"))
+    session.execute(text("DELETE FROM patients"))
     session.commit()
     print("Cleared all data.")
 
@@ -207,6 +208,9 @@ def seed_requests(session: Session, hospitals: list[Hospital]) -> list[Request]:
             units_needed=spec["units"],
             urgency=spec["urgency"],
             status="open",
+            # Hospital requests are verified from creation — staff have
+            # confirmed the need is real as part of clinical workflow.
+            verified_by_hospital=True,
         )
         session.add(request)
         requests.append(request)

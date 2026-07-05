@@ -7,6 +7,7 @@
  */
 "use client";
 
+import React from "react";
 import type { ActiveRequest } from "@/lib/api";
 
 interface Props {
@@ -29,16 +30,20 @@ function timeAgo(dateStr: string): string {
   return `${hours}h ago`;
 }
 
+function renderFeedText(r: ActiveRequest): React.ReactNode {
+  if (r.status === "fulfilled") {
+    return (<><b>{r.source_name}</b> marked {r.blood_type} request as fulfilled</>);
+  }
+  if (r.match_count > 0) {
+    return (<>{r.match_count} donors notified for <b>{r.source_name}</b> {r.blood_type} shortage</>);
+  }
+  return (<><b>{r.source_name}</b> posted a {r.urgency} request for {r.blood_type} · {r.units_needed} units</>);
+}
+
 export default function ActivityFeed({ requests }: Props) {
-  // Convert requests into feed-style entries, most recent first
   const feed = requests.slice(0, 10).map((r) => ({
     level: r.urgency,
-    text:
-      r.status === "fulfilled"
-        ? `<b>${r.source_name}</b> marked ${r.blood_type} request as fulfilled`
-        : r.match_count > 0
-          ? `${r.match_count} donors notified for <b>${r.source_name}</b> ${r.blood_type} shortage`
-          : `<b>${r.source_name}</b> posted a ${r.urgency} request for ${r.blood_type} · ${r.units_needed} units`,
+    parts: renderFeedText(r),
     time: timeAgo(r.created_at),
   }));
 
@@ -52,10 +57,7 @@ export default function ActivityFeed({ requests }: Props) {
         <div key={i} style={item}>
           <div style={{ ...dot, backgroundColor: colorMap[f.level] ?? "#6b7280" }} />
           <div>
-            <div
-              style={text}
-              dangerouslySetInnerHTML={{ __html: f.text }}
-            />
+            <div style={text}>{f.parts}</div>
             <div style={time}>{f.time}</div>
           </div>
         </div>

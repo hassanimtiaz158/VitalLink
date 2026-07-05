@@ -8,6 +8,29 @@ Implements the core matching algorithm described in TDD §5:
 Supports both hospital and patient request paths — the same find_matches()
 function handles both by resolving the request's origin location from
 either hospital.location or patient.location.
+
+TRUST MODEL — why patient requests require verification before matching:
+
+  Hospitals are verified entities. Their staff submit requests as part of
+  clinical workflow — the system can trust that a hospital request
+  represents a real patient need. Hospital requests are created with
+  verified_by_hospital=True and go straight to matching.
+
+  Individual patients can submit requests directly, but without any
+  gatekeeping the system is vulnerable to false or duplicate requests
+  that waste donor time and erode platform trust. Donors receive real
+  email notifications and may rearrange their schedules to help — a
+  false request means a donor showed up for nothing, which damages
+  credibility for future real emergencies.
+
+  Patient requests are created with verified_by_hospital=False and a
+  short verification_code (8 chars). The patient enters this code on
+  the status page after receiving it from hospital staff during triage.
+  Only then does find_matches() include the request.
+
+  This is a deliberate UX tradeoff: we add friction for patients (one
+  extra step) in exchange for donor trust (every notification is real).
+  For hospitals, no friction is added — they are the trust anchor.
 """
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -102,7 +125,13 @@ def find_matches(request: Request, db: Session) -> list[Donor]:
 
     Works identically for hospital and patient requests — the origin
     location is resolved from the appropriate entity.
+
+    Trust gate: only verified requests (verified_by_hospital=True) are
+    matched. Patient requests start unverified and must be confirmed
+    with a short code before donors are notified.
     """
+    if not request.verified_by_hospital:
+        return []
     compatible_types = get_compatible_types(request.blood_type)
     radius_km = get_search_radius_km(request.urgency)
     radius_m = radius_km * 1000  # ST_DWithin uses metres for GEOGRAPHY

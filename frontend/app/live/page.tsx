@@ -160,8 +160,12 @@ export default function LiveDashboard() {
       {/* Map + Feed */}
       <div style={mainGrid}>
         <div style={panel}>
-          <h2 style={panelTitle}>Active requests — map view</h2>
-          <p style={panelSub}>Approximate hospital locations &middot; donor addresses are never shown publicly</p>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
+            <div>
+              <h2 style={panelTitle}>Active requests near you</h2>
+              <p style={panelSub}>Auto-centers on your location &middot; donor addresses are never shown</p>
+            </div>
+          </div>
           {requests.length > 0 ? (
             <LiveMap requests={requests} />
           ) : (
@@ -260,9 +264,10 @@ const sectionLabel: React.CSSProperties = {
 
 const mainGrid: React.CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "1.4fr 1fr",
+  gridTemplateColumns: "1.5fr 1fr",
   gap: 20,
   marginBottom: 28,
+  alignItems: "start",
 };
 
 const panel: React.CSSProperties = {

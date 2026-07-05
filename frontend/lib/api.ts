@@ -105,14 +105,15 @@ export async function getDonorMatches(donorId: string): Promise<DonorMatchesResp
 export async function respondToMatch(
   matchId: string,
   response: "accepted" | "declined",
-  token: string,
+  token?: string,
 ): Promise<{ status: string; request_status: string }> {
+  const params = new URLSearchParams({ response });
+  if (token) params.set("token", token);
   const res = await fetchWithTimeout(
-    `${API_BASE}/matches/${matchId}/respond?token=${encodeURIComponent(token)}`,
+    `${API_BASE}/matches/${matchId}/respond?${params.toString()}`,
     {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ response, token }),
     },
   );
   if (!res.ok) {
@@ -207,6 +208,8 @@ export interface RequestResponse {
   units_needed: number;
   urgency: string;
   status: string;
+  verified_by_hospital: boolean;
+  verification_code: string | null;
   created_at: string;
   matched_donors: number;
 }
@@ -230,6 +233,26 @@ export async function createRequest(data: RequestCreate): Promise<RequestRespons
   return res.json();
 }
 
+export async function verifyRequest(
+  requestId: string,
+  code: string,
+): Promise<{ request_id: string; verified: boolean; matched_donors: number }> {
+  const res = await fetchWithTimeout(`${API_BASE}/requests/${requestId}/verify`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    const detail = body?.detail;
+    const msg = typeof detail === "string"
+      ? detail
+      : `Verification failed (${res.status})`;
+    throw new Error(msg);
+  }
+  return res.json();
+}
+
 // ---------------------------------------------------------------------------
 // Match types
 // ---------------------------------------------------------------------------
@@ -245,13 +268,8 @@ export interface MatchDetail {
 }
 
 export interface RequestWithMatches extends RequestResponse {
+  verification_code: string | null;
   matches: MatchDetail[];
-}
-
-export async function getActiveRequests(): Promise<RequestResponse[]> {
-  const res = await fetchWithTimeout(`${API_BASE}/requests/active`);
-  if (!res.ok) throw new Error(`Failed to fetch active requests (${res.status})`);
-  return res.json();
 }
 
 export async function getRequestMatches(requestId: string): Promise<RequestWithMatches> {

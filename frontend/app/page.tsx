@@ -81,7 +81,7 @@ export default function Home() {
 
       {/* Hospital login */}
       <section style={hospitalSection}>
-        <Link href="/dashboard" style={hospitalLink}>
+        <Link href="/hospital/login" style={hospitalLink}>
           <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ width: 18, height: 18 }}>
             <rect x="3" y="3" width="18" height="18" rx="3" stroke="#6b7280" strokeWidth="1.5" fill="none"/>
             <path d="M12 7v10M7 12h10" stroke="#6b7280" strokeWidth="1.5" strokeLinecap="round"/>

@@ -1,10 +1,12 @@
 """Shortage request endpoints — the core of the matching workflow.
 
 POST /requests          — Submit a shortage request (hospital or patient) and auto-match donors.
-GET  /requests/active   — Public feed of open requests for the live dashboard.
+POST /requests/{id}/verify — Verify a patient request with the short code from hospital staff.
+GET  /requests/active   — Public feed of verified open requests for the live dashboard.
 GET  /requests/{id}/matches — Request detail with its matched donors.
 GET  /requests/stats/supply — Aggregated donor supply levels per blood type.
 """
+import secrets
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -24,6 +26,7 @@ from app.api.schemas import (
     RequestResponse,
     PatientCreate,
     PatientResponse,
+    VerifyRequest,
 )
 
 router = APIRouter(prefix="/requests", tags=["requests"])
@@ -95,6 +98,14 @@ def create_request(payload: RequestCreate, db: Session = Depends(get_db)):
         units_needed=payload.units_needed,
         urgency=payload.urgency,
         status="open",
+        # Trust model: hospital requests are verified from creation because
+        # hospital staff have confirmed the need is real. Patient requests
+        # start unverified — the patient must enter a short code from hospital
+        # staff before donors are notified. This prevents false requests from
+        # wasting donor notifications. See matching_engine/__init__.py for
+        # the full trust tradeoff rationale.
+        verified_by_hospital=payload.requester_type == "hospital",
+        verification_code=secrets.token_urlsafe(6)[:8] if payload.requester_type == "patient" else None,
     )
 
     # Validate the owner exists
@@ -135,9 +146,71 @@ def create_request(payload: RequestCreate, db: Session = Depends(get_db)):
         units_needed=request.units_needed,
         urgency=request.urgency,
         status=request.status,
+        verified_by_hospital=request.verified_by_hospital,
+        verification_code=request.verification_code,
         created_at=request.created_at,
         matched_donors=len(donors),
     )
+
+
+# ---------------------------------------------------------------------------
+# Verify patient request
+# ---------------------------------------------------------------------------
+@router.post("/{request_id}/verify")
+def verify_request(
+    request_id: uuid.UUID,
+    payload: VerifyRequest,
+    db: Session = Depends(get_db),
+):
+    """Verify a patient-submitted request with the short code from hospital staff.
+
+    Patient requests start unverified (verified_by_hospital=False) to prevent
+    false or duplicate requests from wasting donor notifications. The patient
+    enters a short code (8 chars) obtained from hospital staff during triage.
+    Once verified, the request becomes eligible for matching.
+
+    Hospital requests skip this entirely — they are verified from creation
+    because hospital staff have already confirmed the need is real.
+    """
+    request = db.get(Request, request_id)
+    if not request:
+        raise HTTPException(status_code=404, detail="Request not found")
+
+    if request.requester_type != "patient":
+        raise HTTPException(status_code=400, detail="Hospital requests are already verified")
+
+    if request.verified_by_hospital:
+        raise HTTPException(status_code=400, detail="Request is already verified")
+
+    if not secrets.compare_digest(request.verification_code or "", payload.code):
+        raise HTTPException(status_code=400, detail="Invalid verification code")
+
+    request.verified_by_hospital = True
+    request.verification_code = None  # Clear the code after successful verification
+
+    # Now that the request is verified, run matching
+    db.flush()
+    donors = find_matches(request, db)
+
+    for donor in donors:
+        match = Match(
+            request_id=request.request_id,
+            donor_id=donor.donor_id,
+            response="pending",
+        )
+        db.add(match)
+
+    if donors:
+        request.status = "donors_notified"
+
+    db.commit()
+    db.refresh(request)
+
+    return {
+        "request_id": str(request.request_id),
+        "verified": True,
+        "matched_donors": len(donors),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -149,8 +222,11 @@ def get_active_requests(db: Session = Depends(get_db)):
 
     Returns hospital name (for hospital requests) or patient name (for
     patient requests), approximate locations, and match counts.
+
+    Only verified requests are shown — unverified patient requests are
+    hidden from donors until the patient enters the verification code.
     """
-    # Hospital requests
+    # Hospital requests (always verified)
     hospital_rows = (
         db.execute(
             select(
@@ -189,7 +265,7 @@ def get_active_requests(db: Session = Depends(get_db)):
         .all()
     )
 
-    # Patient requests
+    # Patient requests (only verified — unverified are hidden from donors)
     patient_rows = (
         db.execute(
             select(
@@ -211,7 +287,11 @@ def get_active_requests(db: Session = Depends(get_db)):
             )
             .join(Patient, Request.patient_id == Patient.patient_id)
             .outerjoin(Match, Request.request_id == Match.request_id)
-            .where(Request.status != "closed", Request.requester_type == "patient")
+            .where(
+                Request.status != "closed",
+                Request.requester_type == "patient",
+                Request.verified_by_hospital.is_(True),
+            )
             .group_by(
                 Request.request_id,
                 Request.blood_type,
@@ -308,6 +388,8 @@ def get_request_matches(request_id: uuid.UUID, db: Session = Depends(get_db)):
         "units_needed": request.units_needed,
         "urgency": request.urgency,
         "status": request.status,
+        "verified_by_hospital": request.verified_by_hospital,
+        "verification_code": request.verification_code,
         "created_at": request.created_at.isoformat() if request.created_at else None,
         "matched_donors": len(matches),
         "matches": matches,

@@ -2,7 +2,8 @@
  * Patient route group layout — urgent red accent.
  *
  * Wraps the patient-facing "I need blood" flow with a red-accented
- * header and navigation back to the landing page.
+ * header and navigation back to the landing page. Nav is patient-only:
+ * no donor or hospital links exposed.
  */
 import Link from "next/link";
 
@@ -28,10 +29,11 @@ export default function PatientLayout({ children }: { children: React.ReactNode 
             <p style={{ fontSize: 12.5, color: "#5C6D66", margin: "1px 0 0" }}>Request blood</p>
           </div>
         </div>
-        <div style={{ display: "flex", gap: "1rem" }}>
-          <Link href="/donate" style={navLink}>Want to donate?</Link>
+        <nav style={{ display: "flex", gap: "1rem" }}>
+          <Link href="/request-help" style={navLink}>Request help</Link>
+          <Link href="/request-help/new" style={navLink}>New request</Link>
           <Link href="/live" style={navLink}>Live dashboard</Link>
-        </div>
+        </nav>
       </header>
       <div style={{ maxWidth: 720, margin: "0 auto", padding: "2rem 1rem 4rem" }}>
         {children}

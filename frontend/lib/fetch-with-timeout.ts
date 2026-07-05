@@ -19,7 +19,7 @@ export async function fetchWithTimeout(
   } catch (err: unknown) {
     if (err instanceof DOMException && err.name === "AbortError") {
       throw new Error(
-        "The server took too to respond. Please check your connection and try again.",
+        "The server took too long to respond. Please check your connection and try again.",
       );
     }
     if (err instanceof TypeError && /fetch/i.test(err.message)) {

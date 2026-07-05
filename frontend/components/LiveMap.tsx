@@ -1,13 +1,18 @@
 /**
  * LiveMap — Interactive Leaflet.js map showing hospital request locations.
  *
- * Markers are coloured by urgency (red=critical, amber=high, green=routine)
- * and pulsing animations indicate critical requests. Uses OpenStreetMap tiles
- * (no API key required).
+ * Features:
+ * - Auto-centers on the user's detected location via browser geolocation
+ * - Falls back to a sensible default if geolocation is unavailable
+ * - Markers coloured by urgency (red=critical, amber=high, teal=routine)
+ * - Pulsing animation on critical request markers
+ * - Shows detected location name (reverse-geocoded via Nominatim)
+ * - Dark-themed CartoDB tiles for a modern look
+ * - Responsive sizing
  */
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ActiveRequest } from "@/lib/api";
 
 interface Props {
@@ -20,31 +25,97 @@ const urgencyColor: Record<string, string> = {
   routine: "#1B7F79",
 };
 
+const urgencyLabel: Record<string, string> = {
+  critical: "Critical",
+  high: "Urgent",
+  routine: "Routine",
+};
+
+// Default center — NYC (used if geolocation fails)
+const DEFAULT_CENTER: [number, number] = [40.7128, -74.006];
+const DEFAULT_ZOOM = 12;
+
 export default function LiveMap({ requests }: Props) {
   const mapRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const mapInstance = useRef<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const markersLayer = useRef<any>(null);
+  const [locationName, setLocationName] = useState<string | null>(null);
+  const [userPos, setUserPos] = useState<[number, number] | null>(null);
 
+  // Initialize map + detect user location
   useEffect(() => {
     if (!mapRef.current || mapInstance.current) return;
 
-    // Dynamic import — Leaflet must only run client-side
     import("leaflet").then((L) => {
       const map = L.map(mapRef.current!, {
-        center: [40.7128, -74.006],
-        zoom: 12,
+        center: DEFAULT_CENTER,
+        zoom: DEFAULT_ZOOM,
         zoomControl: false,
-        attributionControl: true,
+        attributionControl: false,
       });
+
+      // Dark-themed CartoDB tiles — cleaner and more modern
+      L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
+        maxZoom: 19,
+        subdomains: "abcd",
+      }).addTo(map);
 
       L.control.zoom({ position: "bottomright" }).addTo(map);
 
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-        maxZoom: 19,
-      }).addTo(map);
+      // Attribution in bottom-left
+      L.control.attribution({ position: "bottomleft", prefix: false })
+        .addAttribution("&copy; <a href='https://carto.com/'>CARTO</a> &copy; <a href='https://osm.org/copyright'>OSM</a>")
+        .addTo(map);
+
+      // Create a layer group for markers
+      markersLayer.current = L.layerGroup().addTo(map);
 
       mapInstance.current = map;
+
+      // Try to detect user location
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const lat = pos.coords.latitude;
+            const lng = pos.coords.longitude;
+            setUserPos([lat, lng]);
+            map.setView([lat, lng], 13);
+
+            // Reverse geocode to get location name
+            fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&zoom=10`)
+              .then((r) => r.json())
+              .then((data) => {
+                const city = data.address?.city || data.address?.town || data.address?.village || data.address?.county || "";
+                const country = data.address?.country || "";
+                if (city || country) {
+                  setLocationName([city, country].filter(Boolean).join(", "));
+                }
+              })
+              .catch(() => {});
+
+            // Add user location marker
+            const userIcon = L.divIcon({
+              className: "",
+              html: `<div style="
+                width:16px; height:16px; border-radius:50%;
+                background:#3B82F6; border:3px solid #fff;
+                box-shadow:0 0 0 3px rgba(59,130,246,0.3), 0 2px 6px rgba(0,0,0,0.25);
+              "></div>`,
+              iconSize: [16, 16],
+              iconAnchor: [8, 8],
+            });
+            L.marker([lat, lng], { icon: userIcon })
+              .addTo(map)
+              .bindPopup("<strong>You are here</strong>");
+          },
+          () => {
+            // Geolocation failed — use default NYC center
+          },
+          { timeout: 8000, enableHighAccuracy: false, maximumAge: 120000 },
+        );
+      }
     });
 
     return () => {
@@ -55,76 +126,147 @@ export default function LiveMap({ requests }: Props) {
     };
   }, []);
 
-  // Add/update markers when requests change
+  // Update markers when requests change
   useEffect(() => {
-    if (!mapInstance.current) return;
+    if (!mapInstance.current || !markersLayer.current) return;
 
     import("leaflet").then((L) => {
-      const map = mapInstance.current;
-
-      // Clear existing markers (layers with _icon are marker instances)
-      map.eachLayer((layer: { _icon?: unknown; _latlng?: unknown }) => {
-        if (layer._icon) {
-          map.removeLayer(layer);
-        }
-      });
+      const layer = markersLayer.current;
+      layer.clearLayers();
 
       requests.forEach((r) => {
         const color = urgencyColor[r.urgency] ?? "#6b7280";
+        const isCritical = r.urgency === "critical";
+
         const icon = L.divIcon({
           className: "",
-          html: `<div style="
-            width:14px; height:14px; border-radius:50%;
-            background:${color}; border:2px solid #fff;
-            box-shadow:0 0 0 4px ${color}33, 0 2px 8px rgba(0,0,0,0.2);
-          "></div>`,
-          iconSize: [14, 14],
-          iconAnchor: [7, 7],
+          html: `
+            <div style="position:relative;width:28px;height:28px;">
+              ${isCritical ? `<div class="pulse-ring" style="
+                position:absolute;inset:-6px;border-radius:50%;
+                border:2px solid ${color};opacity:0.6;
+                animation:pulse 2s ease-out infinite;
+              "></div>` : ""}
+              <div style="
+                position:absolute;inset:0;border-radius:50%;
+                background:${color}; border:2.5px solid #fff;
+                box-shadow:0 2px 8px rgba(0,0,0,0.25);
+                display:flex;align-items:center;justify-content:center;
+              ">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M12 2C12 2 5 10.5 5 15.5C5 19.09 8.13 22 12 22C15.87 22 19 19.09 19 15.5C19 10.5 12 2 12 2Z" fill="white"/>
+                </svg>
+              </div>
+            </div>
+          `,
+          iconSize: [28, 28],
+          iconAnchor: [14, 14],
         });
 
+        const popupHtml = `
+          <div style="font-family:'IBM Plex Sans',system-ui,sans-serif;min-width:160px;padding:2px;">
+            <div style="font-weight:700;font-size:14px;margin-bottom:4px;">${r.source_name}</div>
+            <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;">
+              <span style="
+                display:inline-block;padding:2px 8px;border-radius:4px;
+                font-size:12px;font-weight:600;
+                background:${color}18;color:${color};
+              ">${r.blood_type}</span>
+              <span style="font-size:12px;color:#6b7280;">${r.units_needed} unit${r.units_needed !== 1 ? "s" : ""}</span>
+            </div>
+            <div style="font-size:11px;color:#9CA3AF;border-top:1px solid #f3f4f6;padding-top:4px;">
+              ${urgencyLabel[r.urgency] ?? r.urgency} &middot; ${r.match_count} donor${r.match_count !== 1 ? "s" : ""} notified
+            </div>
+          </div>
+        `;
+
         L.marker([r.latitude, r.longitude], { icon })
-          .addTo(map)
-          .bindPopup(
-            `<div style="font-family:system-ui;min-width:140px">
-              <strong>${r.source_name}</strong><br/>
-              <span style="font-size:12px;color:#6b7280">${r.blood_type} x${r.units_needed} &middot; ${r.urgency}</span>
-            </div>`,
-          );
+          .addTo(layer)
+          .bindPopup(popupHtml);
       });
 
-      // Fit bounds if we have markers
+      // Fit bounds to show all markers, but don't zoom past the user's area
       if (requests.length > 0) {
         const bounds = L.latLngBounds(
           requests.map((r) => [r.latitude, r.longitude] as [number, number]),
         );
-        map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
+        if (userPos) {
+          bounds.extend(userPos);
+        }
+        mapInstance.current.fitBounds(bounds, { padding: [50, 50], maxZoom: 14 });
       }
     });
-  }, [requests]);
+  }, [requests, userPos]);
 
   return (
-    <div>
+    <div style={wrapper}>
       <div ref={mapRef} style={mapBox} />
+      {/* Location badge */}
+      <div style={locationBadge}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+          <path d="M12 2C8.13 2 5 5.13 5 9C5 14.25 12 22 12 22C12 22 19 14.25 19 9C19 5.13 15.87 2 12 2ZM12 11.5C10.62 11.5 9.5 10.38 9.5 9C9.5 7.62 10.62 6.5 12 6.5C13.38 6.5 14.5 7.62 14.5 9C14.5 10.38 13.38 11.5 12 11.5Z" fill="#6B7280"/>
+        </svg>
+        <span style={{ fontSize: 12, color: "#374151" }}>
+          {locationName ?? "Detecting location\u2026"}
+        </span>
+      </div>
+      {/* Legend */}
       <div style={legend}>
         <span style={legendItem}>
           <span style={{ ...dot, backgroundColor: "#C8102E" }} /> Critical
         </span>
         <span style={legendItem}>
-          <span style={{ ...dot, backgroundColor: "#C77E1B" }} /> High
+          <span style={{ ...dot, backgroundColor: "#C77E1B" }} /> Urgent
         </span>
         <span style={legendItem}>
           <span style={{ ...dot, backgroundColor: "#1B7F79" }} /> Routine
         </span>
+        {userPos && (
+          <span style={legendItem}>
+            <span style={{ ...dot, backgroundColor: "#3B82F6" }} /> You
+          </span>
+        )}
       </div>
+      {/* Pulse animation */}
+      <style>{`
+        @keyframes pulse {
+          0% { transform: scale(1); opacity: 0.6; }
+          70% { transform: scale(1.8); opacity: 0; }
+          100% { transform: scale(1.8); opacity: 0; }
+        }
+      `}</style>
     </div>
   );
 }
 
+// ---------------------------------------------------------------------------
+// Styles
+// ---------------------------------------------------------------------------
+const wrapper: React.CSSProperties = {
+  position: "relative",
+};
+
 const mapBox: React.CSSProperties = {
-  height: 340,
-  borderRadius: 8,
+  height: 400,
+  borderRadius: 10,
   overflow: "hidden",
   border: "1px solid #D8DFDA",
+};
+
+const locationBadge: React.CSSProperties = {
+  position: "absolute",
+  top: 12,
+  left: 12,
+  zIndex: 1000,
+  display: "flex",
+  alignItems: "center",
+  gap: 6,
+  padding: "6px 12px",
+  backgroundColor: "rgba(255,255,255,0.92)",
+  backdropFilter: "blur(8px)",
+  borderRadius: 8,
+  border: "1px solid #E5E7EB",
+  boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
 };
 
 const legend: React.CSSProperties = {
@@ -143,7 +285,7 @@ const legendItem: React.CSSProperties = {
 };
 
 const dot: React.CSSProperties = {
-  width: 8,
-  height: 8,
+  width: 9,
+  height: 9,
   borderRadius: "50%",
 };

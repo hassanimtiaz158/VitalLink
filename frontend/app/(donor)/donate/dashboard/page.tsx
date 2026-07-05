@@ -2,6 +2,7 @@
  * Donor dashboard — profile, availability, match requests, and impact stats.
  *
  * URL: /donate/dashboard
+ * Guarded: redirects to /donate if no donor ID in localStorage.
  * Looks up the donor by ID from localStorage. Shows:
  *   - Profile card (name, blood type, email, location)
  *   - Availability toggle
@@ -23,17 +24,25 @@ import {
 } from "@/lib/api";
 import LoadingSpinner from "@/components/LoadingSpinner";
 import ErrorBanner from "@/components/ErrorBanner";
+import { UrgencyBadge, RoleGuard } from "@/components/shared";
 
 const TEAL = "#1B7F79";
 const RED = "#C8102E";
 
 type LoadState =
   | { phase: "loading" }
-  | { phase: "no-id" }
   | { phase: "error"; message: string }
   | { phase: "ready"; donor: DonorResponse; matches: DonorMatchesResponse };
 
 export default function DonorDashboardPage() {
+  return (
+    <RoleGuard storage="localStorage" key="vitallink_donor_id" redirectTo="/donate">
+      <DonorDashboardInner />
+    </RoleGuard>
+  );
+}
+
+function DonorDashboardInner() {
   const [state, setState] = useState<LoadState>({ phase: "loading" });
   const [donorIdInput, setDonorIdInput] = useState("");
   const [toggling, setToggling] = useState(false);
@@ -55,8 +64,6 @@ export default function DonorDashboardPage() {
     if (stored) {
       setDonorIdInput(stored);
       load(stored);
-    } else {
-      setState({ phase: "no-id" });
     }
   }, [load]);
 
@@ -80,11 +87,8 @@ export default function DonorDashboardPage() {
   }
 
   async function handleRespond(matchId: string, response: "accepted" | "declined") {
-    // In production, the token would come from the email link.
-    // For demo, we use a placeholder that the backend can skip in dev mode.
     try {
-      await respondToMatch(matchId, response, "demo-token");
-      // Reload matches
+      await respondToMatch(matchId, response);
       if (state.phase === "ready") {
         const matches = await getDonorMatches(state.donor.donor_id);
         setState({ ...state, matches });
@@ -92,39 +96,6 @@ export default function DonorDashboardPage() {
     } catch {
       // silently fail
     }
-  }
-
-  // --- No ID state ---
-  if (state.phase === "no-id") {
-    return (
-      <div style={cardStyle}>
-        <h2 style={headingStyle}>Your Dashboard</h2>
-        <p style={{ color: "#5C6D66", fontSize: "0.9rem", margin: "0 0 1rem" }}>
-          Enter your donor ID to view your profile and match requests.
-        </p>
-        <p style={{ color: "#5C6D66", fontSize: "0.8rem", margin: "0 0 0.5rem" }}>
-          You received this ID when you registered. You can also find it in your confirmation email.
-        </p>
-        <label style={labelStyle}>
-          Donor ID
-          <input
-            type="text"
-            value={donorIdInput}
-            onChange={(e) => setDonorIdInput(e.target.value)}
-            style={inputStyle}
-            placeholder="uuid from registration"
-          />
-        </label>
-        <button onClick={handleLookup} style={btnPrimary} disabled={!donorIdInput.trim()}>
-          Look up
-        </button>
-        <div style={{ marginTop: "1rem", textAlign: "center" }}>
-          <Link href="/donate/register" style={{ color: TEAL, fontSize: "0.85rem", fontWeight: 500 }}>
-            Register as a new donor
-          </Link>
-        </div>
-      </div>
-    );
   }
 
   // --- Loading ---
@@ -295,17 +266,7 @@ function MatchCard({ match, onRespond }: { match: DonorMatchEntry; onRespond: (r
     <div style={matchCardStyle}>
       <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
         <span style={{ fontSize: "1.1rem", fontWeight: 700 }}>{match.blood_type}</span>
-        <span style={{
-          padding: "0.1rem 0.5rem",
-          borderRadius: 4,
-          fontSize: "0.7rem",
-          fontWeight: 600,
-          backgroundColor: match.urgency === "critical" ? "#FBEAEA" : match.urgency === "high" ? "#FBF2E2" : "#E4F1EE",
-          color: match.urgency === "critical" ? RED : match.urgency === "high" ? "#C77E1B" : TEAL,
-          textTransform: "capitalize" as const,
-        }}>
-          {match.urgency}
-        </span>
+        <UrgencyBadge urgency={match.urgency} />
       </div>
       <p style={{ fontSize: "0.8rem", color: "#5C6D66", margin: "0.5rem 0" }}>
         {match.hospital_name ?? "Hospital"} &middot; {match.distance_km ?? "?"} km away &middot; {match.units_needed} units needed
