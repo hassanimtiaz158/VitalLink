@@ -136,7 +136,7 @@ def get_donor_matches(donor_id: uuid.UUID, db: Session = Depends(get_db)):
             "match_id": str(r.match_id),
             "request_id": str(r.request_id),
             "response": r.response,
-            "notified_at": r.notified_at.isoformat() if r.notified_at else None,
+            "notified_at": r.notified_at.isoformat() + "+00:00" if r.notified_at else None,
             "blood_type": r.request_blood_type,
             "units_needed": r.units_needed,
             "urgency": r.urgency,
