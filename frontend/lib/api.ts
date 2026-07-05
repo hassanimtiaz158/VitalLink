@@ -106,7 +106,13 @@ export async function createRequest(data: RequestCreate): Promise<RequestRespons
   });
   if (!res.ok) {
     const body = await res.json().catch(() => null);
-    throw new Error(body?.detail ?? `Request creation failed (${res.status})`);
+    const detail = body?.detail;
+    const msg = Array.isArray(detail)
+      ? detail.map((e: any) => e.msg ?? e).join("; ")
+      : typeof detail === "string"
+        ? detail
+        : `Request failed (${res.status})`;
+    throw new Error(msg);
   }
   return res.json();
 }

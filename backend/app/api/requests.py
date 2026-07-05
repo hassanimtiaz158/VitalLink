@@ -2,13 +2,15 @@
 
 POST /requests          — Submit a shortage request and auto-match donors.
 GET  /requests/active   — Public feed of open requests for the live dashboard.
+GET  /requests/{id}/matches — Request detail with its matched donors.
 GET  /requests/stats/supply — Aggregated donor supply levels per blood type.
 """
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import Integer, cast, func, select
 from sqlalchemy.orm import Session
+from geoalchemy2 import Geometry
 
 from app.core.database import get_db
 from app.models.hospital import Hospital
@@ -88,11 +90,11 @@ def get_active_requests(db: Session = Depends(get_db)):
                 Request.status,
                 Request.created_at,
                 Hospital.name.label("hospital_name"),
-                func.ST_Y(Hospital.location).label("latitude"),
-                func.ST_X(Hospital.location).label("longitude"),
+                func.ST_Y(func.cast(Hospital.location, Geometry)).label("latitude"),
+                func.ST_X(func.cast(Hospital.location, Geometry)).label("longitude"),
                 func.count(Match.match_id).label("match_count"),
                 func.coalesce(
-                    func.sum(func.cast(Match.response == "accepted", db.bind.dialect.name and "integer")),
+                    func.sum(cast(Match.response == "accepted", Integer)),
                     0,
                 ).label("accepted_count"),
             )
@@ -132,6 +134,60 @@ def get_active_requests(db: Session = Depends(get_db)):
     ]
 
 
+@router.get("/{request_id}/matches")
+def get_request_matches(request_id: uuid.UUID, db: Session = Depends(get_db)):
+    """Return a request with its matched donors, including donor info and distance."""
+    request = db.get(Request, request_id)
+    if not request:
+        raise HTTPException(status_code=404, detail="Request not found")
+
+    hospital = db.get(Hospital, request.hospital_id)
+
+    match_rows = (
+        db.execute(
+            select(
+                Match.match_id,
+                Match.request_id,
+                Match.donor_id,
+                Match.response,
+                Match.notified_at,
+                Donor.name.label("donor_name"),
+                Donor.blood_type.label("donor_blood_type"),
+                func.ST_Distance(Donor.location, hospital.location).label("distance_m"),
+            )
+            .join(Donor, Match.donor_id == Donor.donor_id)
+            .where(Match.request_id == request_id)
+        )
+        .all()
+    )
+
+    matches = [
+        {
+            "match_id": str(r.match_id),
+            "request_id": str(r.request_id),
+            "donor_id": str(r.donor_id),
+            "response": r.response,
+            "notified_at": r.notified_at.isoformat() if r.notified_at else None,
+            "donor_name": r.donor_name,
+            "donor_blood_type": r.donor_blood_type,
+            "distance_km": round(r.distance_m / 1000, 1) if r.distance_m else None,
+        }
+        for r in match_rows
+    ]
+
+    return {
+        "request_id": str(request.request_id),
+        "hospital_id": str(request.hospital_id),
+        "blood_type": request.blood_type,
+        "units_needed": request.units_needed,
+        "urgency": request.urgency,
+        "status": request.status,
+        "created_at": request.created_at.isoformat() if request.created_at else None,
+        "matched_donors": len(matches),
+        "matches": matches,
+    }
+
+
 @router.get("/stats/supply")
 def get_supply_stats(db: Session = Depends(get_db)):
     """Aggregate supply levels per blood type for the dashboard stat cards.
@@ -143,7 +199,7 @@ def get_supply_stats(db: Session = Depends(get_db)):
             select(
                 Donor.blood_type,
                 func.count(Donor.donor_id).label("total"),
-                func.sum(func.cast(Donor.available, db.bind.dialect.name and "integer")).label("available"),
+                func.sum(cast(Donor.available, Integer)).label("available"),
             )
             .group_by(Donor.blood_type)
         )

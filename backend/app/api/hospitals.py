@@ -5,8 +5,9 @@ POST /hospitals — Register a healthcare facility with geolocation.
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select, func
+from sqlalchemy import select, func, cast
 from sqlalchemy.orm import Session
+from geoalchemy2 import Geometry
 
 from app.core.database import get_db
 from app.models.hospital import Hospital
@@ -19,7 +20,7 @@ def _hospital_to_response(hospital: Hospital, db: Session) -> HospitalResponse:
     """Convert a Hospital ORM object to a HospitalResponse, extracting lat/lng
     from the PostGIS GEOGRAPHY column via ST_Y / ST_X."""
     lat, lng = db.execute(
-        select(func.ST_Y(hospital.location), func.ST_X(hospital.location))
+        select(func.ST_Y(cast(hospital.location, Geometry)), func.ST_X(cast(hospital.location, Geometry)))
     ).one()
 
     return HospitalResponse(

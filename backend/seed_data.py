@@ -127,8 +127,8 @@ def clear_db(session: Session) -> None:
     """Delete all rows from matches, requests, donors, hospitals."""
     session.execute(text("DELETE FROM matches"))
     session.execute(text("DELETE FROM requests"))
-    session.execute(text="DELETE FROM donors")
-    session.execute(text="DELETE FROM hospitals")
+    session.execute(text("DELETE FROM donors"))
+    session.execute(text("DELETE FROM hospitals"))
     session.commit()
     print("Cleared all data.")
 

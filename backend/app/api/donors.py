@@ -6,8 +6,9 @@ PATCH  /donors/{id}/availability — Toggle availability flag.
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select, func
+from sqlalchemy import select, func, cast
 from sqlalchemy.orm import Session
+from geoalchemy2 import Geometry
 
 from app.core.database import get_db
 from app.models.donor import Donor
@@ -20,7 +21,7 @@ def _donor_to_response(donor: Donor, db: Session) -> DonorResponse:
     """Convert a Donor ORM object to a DonorResponse, extracting lat/lng
     from the PostGIS GEOGRAPHY column via ST_Y / ST_X."""
     lat, lng = db.execute(
-        select(func.ST_Y(donor.location), func.ST_X(donor.location))
+        select(func.ST_Y(cast(donor.location, Geometry)), func.ST_X(cast(donor.location, Geometry)))
     ).one()
 
     return DonorResponse(
