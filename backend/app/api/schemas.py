@@ -2,11 +2,15 @@
 
 Blood type and urgency constraints are enforced via regex `pattern` fields
 to keep them in sync with the database CHECK constraints (TDD §3).
+
+RequestCreate supports two paths:
+  - Hospital path: hospital_id required, requester_type='hospital'
+  - Patient path:  patient_id required, requester_type='patient'
 """
 from datetime import date, datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # ---------------------------------------------------------------------------
@@ -68,18 +72,61 @@ class HospitalResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Patient schemas
+# ---------------------------------------------------------------------------
+class PatientCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+    blood_type: str = Field(..., pattern=r"^(O|A|B|AB)[+-]$")
+    email: str = Field(..., min_length=3, max_length=320)
+    latitude: float = Field(..., ge=-90, le=90)
+    longitude: float = Field(..., ge=-180, le=180)
+
+
+class PatientResponse(BaseModel):
+    patient_id: UUID
+    name: str
+    blood_type: str
+    email: str
+    latitude: float
+    longitude: float
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+# ---------------------------------------------------------------------------
 # Request schemas
 # ---------------------------------------------------------------------------
 class RequestCreate(BaseModel):
-    hospital_id: UUID
+    """Create a shortage request.
+
+    Exactly one of hospital_id or patient_id must be provided.
+    requester_type is inferred from which ID is supplied.
+    """
+    hospital_id: UUID | None = None
+    patient_id: UUID | None = None
     blood_type: str = Field(..., pattern=r"^(O|A|B|AB)[+-]$")
     units_needed: int = Field(..., ge=1)
     urgency: str = Field(..., pattern=r"^(critical|high|routine)$")
 
+    @model_validator(mode="after")
+    def validate_owner(self) -> "RequestCreate":
+        if self.hospital_id and self.patient_id:
+            raise ValueError("Provide exactly one of hospital_id or patient_id, not both")
+        if not self.hospital_id and not self.patient_id:
+            raise ValueError("Provide either hospital_id or patient_id")
+        return self
+
+    @property
+    def requester_type(self) -> str:
+        return "hospital" if self.hospital_id else "patient"
+
 
 class RequestResponse(BaseModel):
     request_id: UUID
-    hospital_id: UUID
+    requester_type: str
+    hospital_id: UUID | None
+    patient_id: UUID | None
     blood_type: str
     units_needed: int
     urgency: str

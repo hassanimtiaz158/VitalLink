@@ -78,10 +78,45 @@ export async function registerHospital(data: HospitalCreate): Promise<HospitalRe
 }
 
 // ---------------------------------------------------------------------------
+// Patient types
+// ---------------------------------------------------------------------------
+export interface PatientCreate {
+  name: string;
+  blood_type: string;
+  email: string;
+  latitude: number;
+  longitude: number;
+}
+
+export interface PatientResponse {
+  patient_id: string;
+  name: string;
+  blood_type: string;
+  email: string;
+  latitude: number;
+  longitude: number;
+  created_at: string;
+}
+
+export async function registerPatient(data: PatientCreate): Promise<PatientResponse> {
+  const res = await fetchWithTimeout(`${API_BASE}/requests/patients`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.detail ?? `Patient registration failed (${res.status})`);
+  }
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
 // Request types
 // ---------------------------------------------------------------------------
 export interface RequestCreate {
-  hospital_id: string;
+  hospital_id?: string | null;
+  patient_id?: string | null;
   blood_type: string;
   units_needed: number;
   urgency: string;
@@ -89,7 +124,9 @@ export interface RequestCreate {
 
 export interface RequestResponse {
   request_id: string;
-  hospital_id: string;
+  requester_type: string;
+  hospital_id: string | null;
+  patient_id: string | null;
   blood_type: string;
   units_needed: number;
   urgency: string;
@@ -155,7 +192,8 @@ export async function getRequestMatches(requestId: string): Promise<RequestWithM
 // ---------------------------------------------------------------------------
 export interface ActiveRequest {
   request_id: string;
-  hospital_name: string;
+  requester_type: string;
+  source_name: string;
   blood_type: string;
   units_needed: number;
   urgency: string;

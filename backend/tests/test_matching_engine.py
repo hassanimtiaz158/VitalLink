@@ -161,6 +161,7 @@ class TestFindMatches:
         request = MagicMock()
         request.blood_type = blood_type
         request.urgency = urgency
+        request.requester_type = "hospital"
         request.hospital = MagicMock()
         request.hospital.location = "mocked-hospital-location"
         return request

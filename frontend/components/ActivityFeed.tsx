@@ -35,10 +35,10 @@ export default function ActivityFeed({ requests }: Props) {
     level: r.urgency,
     text:
       r.status === "fulfilled"
-        ? `<b>${r.hospital_name}</b> marked ${r.blood_type} request as fulfilled`
+        ? `<b>${r.source_name}</b> marked ${r.blood_type} request as fulfilled`
         : r.match_count > 0
-          ? `${r.match_count} donors notified for <b>${r.hospital_name}</b> ${r.blood_type} shortage`
-          : `<b>${r.hospital_name}</b> posted a ${r.urgency} request for ${r.blood_type} · ${r.units_needed} units`,
+          ? `${r.match_count} donors notified for <b>${r.source_name}</b> ${r.blood_type} shortage`
+          : `<b>${r.source_name}</b> posted a ${r.urgency} request for ${r.blood_type} · ${r.units_needed} units`,
     time: timeAgo(r.created_at),
   }));
 

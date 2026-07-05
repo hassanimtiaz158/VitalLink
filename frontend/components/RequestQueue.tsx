@@ -55,7 +55,7 @@ export default function RequestQueue({ requests }: Props) {
             : 0;
           return (
             <tr key={r.request_id}>
-              <td style={td}>{r.hospital_name}</td>
+              <td style={td}>{r.source_name}</td>
               <td style={{ ...td, fontFamily: "'IBM Plex Mono', monospace" }}>
                 {r.blood_type}
               </td>

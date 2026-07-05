@@ -4,6 +4,10 @@ Implements the core matching algorithm described in TDD §5:
   1. Look up ABO/Rh-compatible donor blood types via COMPATIBILITY_MAP.
   2. Filter available donors within an urgency-based radius (ST_DWithin).
   3. Rank by distance (closest first), capped at MAX_MATCHES.
+
+Supports both hospital and patient request paths — the same find_matches()
+function handles both by resolving the request's origin location from
+either hospital.location or patient.location.
 """
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -68,6 +72,26 @@ def get_search_radius_km(urgency: str) -> int:
         raise ValueError(f"Unknown urgency level: {urgency}")
 
 
+def _resolve_origin_location(request: Request, db: Session):
+    """Resolve the origin location for a request.
+
+    Hospital requests use the hospital's registered location.
+    Patient requests use the patient's provided location.
+
+    Raises ValueError if the request references a missing entity.
+    """
+    if request.requester_type == "hospital":
+        if request.hospital is None:
+            raise ValueError(f"Hospital request {request.request_id} has no hospital")
+        return request.hospital.location
+    elif request.requester_type == "patient":
+        if request.patient is None:
+            raise ValueError(f"Patient request {request.request_id} has no patient")
+        return request.patient.location
+    else:
+        raise ValueError(f"Unknown requester_type: {request.requester_type}")
+
+
 def find_matches(request: Request, db: Session) -> list[Donor]:
     """Find compatible, available donors within the urgency-based radius.
 
@@ -75,13 +99,16 @@ def find_matches(request: Request, db: Session) -> list[Donor]:
     2. Run a PostGIS ST_DWithin query filtering available donors within
        the radius defined by the request's urgency level.
     3. Order by ST_Distance (closest first), capped at MAX_MATCHES.
+
+    Works identically for hospital and patient requests — the origin
+    location is resolved from the appropriate entity.
     """
     compatible_types = get_compatible_types(request.blood_type)
     radius_km = get_search_radius_km(request.urgency)
     radius_m = radius_km * 1000  # ST_DWithin uses metres for GEOGRAPHY
 
-    # Load the hospital's location for the distance calculation.
-    hospital_location = request.hospital.location
+    # Resolve origin location from hospital or patient.
+    origin_location = _resolve_origin_location(request, db)
 
     donors = (
         db.execute(
@@ -90,12 +117,12 @@ def find_matches(request: Request, db: Session) -> list[Donor]:
                 Donor.available.is_(True),
                 func.ST_DWithin(
                     Donor.location,
-                    hospital_location,
+                    origin_location,
                     radius_m,
                 ),
             )
             .order_by(
-                func.ST_Distance(Donor.location, hospital_location)
+                func.ST_Distance(Donor.location, origin_location)
             )
             .limit(MAX_MATCHES)
         )

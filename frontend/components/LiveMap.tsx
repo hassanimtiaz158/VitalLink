@@ -86,7 +86,7 @@ export default function LiveMap({ requests }: Props) {
           .addTo(map)
           .bindPopup(
             `<div style="font-family:system-ui;min-width:140px">
-              <strong>${r.hospital_name}</strong><br/>
+              <strong>${r.source_name}</strong><br/>
               <span style="font-size:12px;color:#6b7280">${r.blood_type} x${r.units_needed} &middot; ${r.urgency}</span>
             </div>`,
           );

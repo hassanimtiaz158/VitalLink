@@ -1,8 +1,11 @@
-"""Request model — blood shortage requests submitted by hospitals.
+"""Request model — blood shortage requests submitted by hospitals or patients.
 
 Lifecycle: open → donors_notified → partially_fulfilled → fulfilled → closed.
 CHECK constraints enforce valid blood types, urgency levels, and status values
 at the database level (mirrored in Pydantic schemas).
+
+A request belongs to exactly one of: hospital (via hospital_id) or patient
+(via patient_id). The requester_type column discriminates between the two.
 """
 import uuid
 from datetime import datetime
@@ -17,7 +20,6 @@ from app.core.database import Base
 class Request(Base):
     __tablename__ = "requests"
     __table_args__ = (
-        # Prevents orphaned requests if a hospital is deleted.
         CheckConstraint(
             "blood_type IN ('O-','O+','A-','A+','B-','B+','AB-','AB+')",
             name="ck_requests_blood_type",
@@ -31,17 +33,29 @@ class Request(Base):
             name="ck_requests_status",
         ),
         CheckConstraint("units_needed > 0", name="ck_requests_units_positive"),
+        CheckConstraint(
+            "requester_type IN ('patient', 'hospital')",
+            name="ck_requests_requester_type",
+        ),
     )
 
     request_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
-    # FK to the hospital that created this request.
-    hospital_id: Mapped[uuid.UUID] = mapped_column(
+    # FK to the hospital that created this request (nullable for patient requests).
+    hospital_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("hospitals.hospital_id", ondelete="RESTRICT"),
-        nullable=False,
+        nullable=True,
     )
+    # FK to the patient who created this request (nullable for hospital requests).
+    patient_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("patients.patient_id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    # Discriminator: 'hospital' or 'patient'.
+    requester_type: Mapped[str] = mapped_column(Text, nullable=False, default="hospital")
     blood_type: Mapped[str] = mapped_column(Text, nullable=False)
     units_needed: Mapped[int] = mapped_column(Integer, nullable=False)
     # Determines match radius: critical=30km, high=15km, routine=8km.
@@ -53,8 +67,11 @@ class Request(Base):
     )
 
     # Relationships
-    hospital: Mapped["Hospital"] = relationship(
+    hospital: Mapped["Hospital | None"] = relationship(
         "Hospital", back_populates="requests"
+    )
+    patient: Mapped["Patient | None"] = relationship(
+        "Patient", back_populates="requests"
     )
     matches: Mapped[list["Match"]] = relationship(
         "Match", back_populates="request", cascade="all, delete-orphan"
