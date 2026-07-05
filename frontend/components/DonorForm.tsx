@@ -100,6 +100,11 @@ export default function DonorForm() {
   }
 
   if (status.state === "success") {
+    // Save donor ID to localStorage for the dashboard
+    if (typeof window !== "undefined") {
+      localStorage.setItem("vitallink_donor_id", status.donor.donor_id);
+    }
+
     return (
       <div style={cardStyle}>
         <div style={{ textAlign: "center", padding: "1rem 0" }}>
@@ -107,21 +112,29 @@ export default function DonorForm() {
           <h2 style={headingStyle}>Registered!</h2>
           <p>Thanks, <strong>{status.donor.name}</strong>. You&apos;re now in the donor pool.</p>
           <p>Blood type: <strong>{status.donor.blood_type}</strong></p>
+          <p style={{ fontSize: "0.8rem", color: "#5C6D66" }}>
+            Your donor ID: <code style={{ backgroundColor: "#F3F4F6", padding: "2px 6px", borderRadius: 4 }}>{status.donor.donor_id}</code>
+          </p>
         </div>
-        <button
-          onClick={() => {
-            setStatus({ state: "idle" });
-            setName("");
-            setEmail("");
-            setManualAddress("");
-            setLat(null);
-            setLng(null);
-            setGeoError(null);
-          }}
-          style={btnSecondary}
-        >
-          Register Another
-        </button>
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+          <a href="/donate/dashboard" style={btnPrimary}>
+            View your dashboard
+          </a>
+          <button
+            onClick={() => {
+              setStatus({ state: "idle" });
+              setName("");
+              setEmail("");
+              setManualAddress("");
+              setLat(null);
+              setLng(null);
+              setGeoError(null);
+            }}
+            style={btnSecondary}
+          >
+            Register Another
+          </button>
+        </div>
       </div>
     );
   }
@@ -271,7 +284,7 @@ const btnPrimary: React.CSSProperties = {
   padding: "0.75rem",
   border: "none",
   borderRadius: 8,
-  backgroundColor: "#dc2626",
+  backgroundColor: "#1B7F79",
   color: "#fff",
   fontSize: "1rem",
   fontWeight: 600,
@@ -282,6 +295,7 @@ const btnPrimary: React.CSSProperties = {
   justifyContent: "center",
   gap: "0.5rem",
   minHeight: 44,
+  textDecoration: "none",
 };
 
 const btnSecondary: React.CSSProperties = {

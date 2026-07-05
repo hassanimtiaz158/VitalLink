@@ -46,6 +46,82 @@ export async function registerDonor(data: DonorCreate): Promise<DonorResponse> {
   return res.json();
 }
 
+export async function getDonor(donorId: string): Promise<DonorResponse> {
+  const res = await fetchWithTimeout(`${API_BASE}/donors/${donorId}`);
+  if (!res.ok) throw new Error(`Donor not found (${res.status})`);
+  return res.json();
+}
+
+export async function updateDonorAvailability(
+  donorId: string,
+  available: boolean,
+): Promise<DonorResponse> {
+  const res = await fetchWithTimeout(`${API_BASE}/donors/${donorId}/availability`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ available }),
+  });
+  if (!res.ok) throw new Error(`Failed to update availability (${res.status})`);
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Donor match types
+// ---------------------------------------------------------------------------
+export interface DonorMatchEntry {
+  match_id: string;
+  request_id: string;
+  response: string;
+  notified_at: string | null;
+  blood_type: string;
+  units_needed: number;
+  urgency: string;
+  request_status: string;
+  requester_type: string;
+  hospital_name: string | null;
+  distance_km: number | null;
+}
+
+export interface DonorMatchesResponse {
+  donor_id: string;
+  name: string;
+  blood_type: string;
+  available: boolean;
+  pending: DonorMatchEntry[];
+  history: DonorMatchEntry[];
+  impact: {
+    total_notified: number;
+    accepted: number;
+    lives_potentially_saved: number;
+  };
+}
+
+export async function getDonorMatches(donorId: string): Promise<DonorMatchesResponse> {
+  const res = await fetchWithTimeout(`${API_BASE}/donors/${donorId}/matches`);
+  if (!res.ok) throw new Error(`Failed to fetch donor matches (${res.status})`);
+  return res.json();
+}
+
+export async function respondToMatch(
+  matchId: string,
+  response: "accepted" | "declined",
+  token: string,
+): Promise<{ status: string; request_status: string }> {
+  const res = await fetchWithTimeout(
+    `${API_BASE}/matches/${matchId}/respond?token=${encodeURIComponent(token)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ response, token }),
+    },
+  );
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.detail ?? `Failed to respond (${res.status})`);
+  }
+  return res.json();
+}
+
 // ---------------------------------------------------------------------------
 // Hospital types
 // ---------------------------------------------------------------------------
