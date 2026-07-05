@@ -25,8 +25,9 @@ const urgencyFg: Record<string, string> = {
 
 const statusLabel: Record<string, string> = {
   open: "Open",
-  donors_notified: "Donors notified",
-  partially_fulfilled: "Partially fulfilled",
+  donor_accepted: "Donor accepted",
+  donor_confirmed: "Donor confirmed",
+  contact_shared: "Contact shared",
   fulfilled: "Fulfilled",
   closed: "Closed",
 };
@@ -40,7 +41,7 @@ export default function RequestQueue({ requests }: Props) {
     <table style={table}>
       <thead>
         <tr>
-          <th style={th}>Hospital</th>
+          <th style={th}>Requester</th>
           <th style={th}>Type</th>
           <th style={th}>Urgency</th>
           <th style={th}>Units</th>
@@ -55,7 +56,7 @@ export default function RequestQueue({ requests }: Props) {
             : 0;
           return (
             <tr key={r.request_id}>
-              <td style={td}>{r.source_name}</td>
+              <td style={td}>{r.requester_name}</td>
               <td style={{ ...td, fontFamily: "'IBM Plex Mono', monospace" }}>
                 {r.blood_type}
               </td>

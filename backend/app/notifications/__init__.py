@@ -1,9 +1,9 @@
 """Notification service for VitalLink.
 
 Handles:
-  - Signed JWT tokens for one-click "I can help" response links.
+  - Signed JWT tokens for one-click donor response links.
   - Email dispatch via Resend free-tier API.
-  - Fallback queue when rate limits are hit (TDD §6).
+  - Fallback queue when rate limits are hit.
 """
 import logging
 from datetime import datetime, timedelta, timezone
@@ -15,14 +15,12 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models.donor import Donor
-from app.models.hospital import Hospital
 from app.models.match import Match
 from app.models.request import Request
 
 logger = logging.getLogger(__name__)
 
 # In-memory fallback queue for emails that failed due to rate limits.
-# Each entry is a dict with keys: match_id, donor_email, subject, html.
 _fallback_queue: list[dict] = []
 
 
@@ -31,11 +29,7 @@ _fallback_queue: list[dict] = []
 # ---------------------------------------------------------------------------
 
 def sign_response_token(match_id: UUID) -> str:
-    """Create a short-lived JWT encoding the match_id.
-
-    The token is embedded in the one-click "I can help" URL so the
-    donor can respond without logging in.
-    """
+    """Create a short-lived JWT encoding the match_id."""
     payload = {
         "match_id": str(match_id),
         "exp": datetime.now(timezone.utc)
@@ -50,10 +44,7 @@ def sign_response_token(match_id: UUID) -> str:
 
 
 def verify_response_token(token: str) -> UUID | None:
-    """Decode and verify a response token.
-
-    Returns the match_id if valid, None if expired or tampered.
-    """
+    """Decode and verify a response token."""
     try:
         payload = jwt.decode(
             token,
@@ -75,15 +66,15 @@ def _build_response_url(match_id: UUID) -> str:
     return f"{settings.BASE_URL}/api/matches/{match_id}/respond?token={token}"
 
 
-def _build_email_html(
+def _build_donor_notification_html(
     donor_name: str,
-    hospital_name: str,
+    requester_name: str,
     blood_type: str,
     urgency: str,
     distance_km: float,
     response_url: str,
 ) -> str:
-    """Build a simple HTML email body for a match notification."""
+    """Build HTML email for a donor who was accepted by a requester."""
     urgency_color = {
         "critical": "#dc2626",
         "high": "#f59e0b",
@@ -93,24 +84,24 @@ def _build_email_html(
     return f"""
     <html>
     <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2 style="color: #1e3a5f;">VitalLink — Blood Needed</h2>
+        <h2 style="color: #1B7F79;">VitalLink — You've Been Selected!</h2>
         <p>Hi {donor_name},</p>
         <p>
             <strong style="color: {urgency_color}; text-transform: uppercase;">
                 {urgency}
             </strong>
-            request from <strong>{hospital_name}</strong>:
+            request from <strong>{requester_name}</strong>:
         </p>
         <ul>
             <li>Blood type needed: <strong>{blood_type}</strong></li>
             <li>Distance: <strong>{distance_km:.1f} km</strong></li>
         </ul>
-        <p>Your blood type is a match. If you can donate, click below:</p>
+        <p>Your blood type is a match. If you can donate, click below to confirm:</p>
         <a href="{response_url}"
            style="display: inline-block; padding: 14px 28px;
-                  background: #dc2626; color: #fff; text-decoration: none;
+                  background: #1B7F79; color: #fff; text-decoration: none;
                   border-radius: 6px; font-weight: bold; font-size: 16px;">
-            I Can Help
+            I'm In!
         </a>
         <p style="color: #6b7280; font-size: 13px; margin-top: 24px;">
             This link expires in {settings.RESPONSE_TOKEN_EXPIRY_DAYS} days.
@@ -121,9 +112,9 @@ def _build_email_html(
     """
 
 
-def _build_email_subject(hospital_name: str, blood_type: str, urgency: str) -> str:
+def _build_email_subject(requester_name: str, blood_type: str, urgency: str) -> str:
     """Build the email subject line."""
-    return f"[VitalLink] {urgency.upper()}: {hospital_name} needs {blood_type}"
+    return f"[VitalLink] {urgency.upper()}: {requester_name} needs {blood_type}"
 
 
 # ---------------------------------------------------------------------------
@@ -132,9 +123,9 @@ def _build_email_subject(hospital_name: str, blood_type: str, urgency: str) -> s
 
 def _send_email(to: str, subject: str, html: str) -> bool:
     """Send a single email via Resend. Returns True on success."""
-    if not settings.RESEND_API_KEY:
-        logger.warning("RESEND_API_KEY not set — skipping email to %s", to)
-        return True  # treat as success in dev mode
+    if not settings.RESEND_API_KEY or settings.RESEND_API_KEY.startswith("re_xxx"):
+        logger.warning("RESEND_API_KEY not configured — treating email to %s as sent (dev mode)", to)
+        return True
 
     try:
         resend.Emails.send(
@@ -158,76 +149,59 @@ def _send_email(to: str, subject: str, html: str) -> bool:
 # Public API
 # ---------------------------------------------------------------------------
 
-def notify_matched_donors(
+def notify_accepted_donor(
+    match: Match,
+    donor: Donor,
     request: Request,
-    matched_donors: list[tuple[Match, Donor, float]],
+    requester_name: str,
     db: Session,
 ) -> dict:
-    """Send notification emails to all matched donors.
+    """Send notification email to a donor accepted by a requester.
 
-    Parameters
-    ----------
-    request : Request
-        The shortage request that was matched.
-    matched_donors : list of (Match, Donor, distance_km) tuples
-        Output from the matching engine — each entry includes the match
-        record, the donor, and their distance from the hospital.
-    db : Session
-        Database session for updating notified_at timestamps.
-
-    Returns
-    -------
-    dict
-        Summary: {"sent": int, "queued": int, "failed": int}
+    The email includes a one-click response link.
+    Does NOT commit — caller should commit the session.
     """
-    hospital = db.get(Hospital, request.hospital_id)
-    if not hospital:
-        logger.error("Hospital %s not found for request %s", request.hospital_id, request.request_id)
-        return {"sent": 0, "queued": 0, "failed": len(matched_donors)}
+    subject = _build_email_subject(requester_name, request.blood_type, request.urgency)
 
-    stats = {"sent": 0, "queued": 0, "failed": 0}
+    # Calculate distance
+    from sqlalchemy import func, select, cast
+    from geoalchemy2 import Geometry
+    from app.models.requester import Requester
 
-    for match, donor, distance_km in matched_donors:
-        subject = _build_email_subject(hospital.name, request.blood_type, request.urgency)
-        html = _build_email_html(
-            donor_name=donor.name,
-            hospital_name=hospital.name,
-            blood_type=request.blood_type,
-            urgency=request.urgency,
-            distance_km=distance_km,
-            response_url=_build_response_url(match.match_id),
-        )
+    requester = db.get(Requester, request.requester_id)
+    distance_km = 0.0
+    if requester:
+        distance_m = db.execute(
+            select(func.ST_Distance(Donor.location, requester.location))
+        ).scalar()
+        distance_km = round(distance_m / 1000, 1) if distance_m else 0.0
 
-        success = _send_email(donor.email, subject, html)
+    html = _build_donor_notification_html(
+        donor_name=donor.name,
+        requester_name=requester_name,
+        blood_type=request.blood_type,
+        urgency=request.urgency,
+        distance_km=distance_km,
+        response_url=_build_response_url(match.match_id),
+    )
 
-        if success:
-            match.notified_at = datetime.now(timezone.utc)
-            stats["sent"] += 1
-        else:
-            # Fallback: queue for retry (TDD §6)
-            _fallback_queue.append({
-                "match_id": str(match.match_id),
-                "donor_email": donor.email,
-                "subject": subject,
-                "html": html,
-            })
-            stats["queued"] += 1
+    success = _send_email(donor.email, subject, html)
 
-    db.commit()
-    return stats
+    if success:
+        match.notified_at = datetime.now(timezone.utc)
+    else:
+        _fallback_queue.append({
+            "match_id": str(match.match_id),
+            "donor_email": donor.email,
+            "subject": subject,
+            "html": html,
+        })
+
+    return {"sent": 1 if success else 0, "queued": 0 if success else 1}
 
 
 def retry_fallback_queue(db: Session) -> dict:
-    """Retry queued emails from the fallback queue.
-
-    Called on a schedule (e.g., via a cron job or background task).
-    Uses exponential backoff — each retry waits longer before attempting.
-
-    Returns
-    -------
-    dict
-        Summary: {"sent": int, "remaining": int}
-    """
+    """Retry queued emails from the fallback queue."""
     if not _fallback_queue:
         return {"sent": 0, "remaining": 0}
 
@@ -237,7 +211,6 @@ def retry_fallback_queue(db: Session) -> dict:
     for entry in _fallback_queue:
         success = _send_email(entry["donor_email"], entry["subject"], entry["html"])
         if success:
-            # Update notified_at on the match record.
             match = db.get(Match, UUID(entry["match_id"]))
             if match:
                 match.notified_at = datetime.now(timezone.utc)

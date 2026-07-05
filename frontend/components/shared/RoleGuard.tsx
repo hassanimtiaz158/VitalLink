@@ -23,7 +23,7 @@ interface Props {
   key: string;
   /** Where to redirect if the key is missing or empty */
   redirectTo: string;
-  /** Optional fallback value from env (e.g. NEXT_PUBLIC_DEMO_HOSPITAL_ID).
+  /** Optional fallback value from env (e.g. NEXT_PUBLIC_DEMO_REQUESTER_ID).
    *  If set, the guard passes even when storage has no value. */
   envFallback?: string;
   children: ReactNode;

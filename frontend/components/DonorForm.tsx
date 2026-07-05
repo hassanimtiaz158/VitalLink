@@ -25,6 +25,7 @@ type Status =
 export default function DonorForm() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [bloodType, setBloodType] = useState("O+");
   const [available, setAvailable] = useState(true);
   const [manualAddress, setManualAddress] = useState("");
@@ -88,6 +89,7 @@ export default function DonorForm() {
       const donor = await registerDonor({
         name,
         email,
+        phone: phone || null,
         blood_type: bloodType,
         latitude: lat!,
         longitude: lng!,
@@ -148,6 +150,18 @@ export default function DonorForm() {
         />
       </label>
 
+      {/* Phone */}
+      <label style={labelStyle}>
+        Phone <span style={{ color: "#9CA3AF", fontWeight: 400 }}>(optional)</span>
+        <input
+          type="tel"
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          style={inputStyle}
+          placeholder="+92 300 1234567"
+        />
+      </label>
+
       {/* Blood Type */}
       <label style={labelStyle}>
         Blood Type
@@ -185,12 +199,12 @@ export default function DonorForm() {
             borderColor: geoError ? "#f59e0b" : undefined,
             backgroundColor: geoError ? "#FFFBEB" : undefined,
           }}
-          placeholder="e.g. Mount Sinai Hospital, New York, NY"
+          placeholder="e.g. DHA Phase 5, Lahore"
           required={!!geoError}
         />
         {geoError && (
           <span style={{ fontSize: "0.75rem", color: "#92400e", marginTop: "0.25rem" }}>
-            Enter a hospital or street address so we can match you with nearby requests.
+            Enter your address or a nearby landmark so we can match you with nearby requests.
           </span>
         )}
       </label>

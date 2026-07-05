@@ -32,7 +32,7 @@ export default function DonateLandingPage() {
         <h2 style={heroTitle}>Donate blood. Save lives.</h2>
         <p style={heroSub}>
           Every donation can save up to 3 people. Register once, and we will notify you
-          when a hospital near you has a matching shortage.
+          when someone near you needs your blood type.
         </p>
       </section>
 
@@ -92,7 +92,7 @@ const STEPS = [
   },
   {
     title: "Get matched",
-    desc: "When a hospital near you needs your blood type, we send you an email with one click.",
+    desc: "When a request near you needs your blood type, we send you an email with one click.",
   },
   {
     title: "Respond",
@@ -100,7 +100,7 @@ const STEPS = [
   },
   {
     title: "Save lives",
-    desc: "Show up at the hospital, donate, and your impact is tracked in your dashboard.",
+    desc: "Show up, donate, and your impact is tracked in your dashboard.",
   },
 ];
 
@@ -111,7 +111,7 @@ const FAQS = [
   },
   {
     q: "How often will I be contacted?",
-    a: "Only when a hospital within your radius has an urgent need for your blood type. We do not spam — typically a few times per month at most.",
+    a: "Only when a request within your radius needs your blood type. We do not spam — typically a few times per month at most.",
   },
   {
     q: "Can I pause notifications?",

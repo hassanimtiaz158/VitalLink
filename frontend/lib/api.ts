@@ -31,6 +31,7 @@ export interface DonorCreate {
   name: string;
   blood_type: string;
   email: string;
+  phone?: string | null;
   latitude: number;
   longitude: number;
   available: boolean;
@@ -42,6 +43,7 @@ export interface DonorResponse {
   name: string;
   blood_type: string;
   email: string;
+  phone: string | null;
   latitude: number;
   longitude: number;
   available: boolean;
@@ -104,12 +106,16 @@ export interface DonorMatchEntry {
   request_id: string;
   response: string;
   notified_at: string | null;
+  accepted_at: string | null;
+  confirmed_at: string | null;
+  contact_shared_at: string | null;
   blood_type: string;
   units_needed: number;
   urgency: string;
   request_status: string;
-  requester_type: string;
-  hospital_name: string | null;
+  requester_name: string | null;
+  requester_email: string | null;
+  requester_phone: string | null;
   distance_km: number | null;
 }
 
@@ -139,12 +145,9 @@ export async function getDonorMatches(donorId: string): Promise<DonorMatchesResp
 export async function respondToMatch(
   matchId: string,
   response: "accepted" | "declined",
-  token?: string,
 ): Promise<{ status: string; request_status: string }> {
-  const params = new URLSearchParams({ response });
-  if (token) params.set("token", token);
   const res = await fetchWithTimeout(
-    `${API_BASE}/matches/${matchId}/respond?${params.toString()}`,
+    `${API_BASE}/matches/${matchId}/respond?response=${response}`,
     {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -158,66 +161,35 @@ export async function respondToMatch(
 }
 
 // ---------------------------------------------------------------------------
-// Hospital types
+// Requester types
 // ---------------------------------------------------------------------------
-export interface HospitalCreate {
+export interface RequesterCreate {
   name: string;
-  latitude: number;
-  longitude: number;
-  verified?: boolean;
-}
-
-export interface HospitalResponse {
-  hospital_id: string;
-  name: string;
-  latitude: number;
-  longitude: number;
-  verified: boolean;
-}
-
-export async function registerHospital(data: HospitalCreate): Promise<HospitalResponse> {
-  const res = await fetchWithTimeout(`${API_BASE}/hospitals`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => null);
-    throw new Error(extractError(body, `Hospital registration failed (${res.status})`));
-  }
-  return res.json();
-}
-
-// ---------------------------------------------------------------------------
-// Patient types
-// ---------------------------------------------------------------------------
-export interface PatientCreate {
-  name: string;
-  blood_type: string;
   email: string;
+  phone?: string | null;
   latitude: number;
   longitude: number;
 }
 
-export interface PatientResponse {
-  patient_id: string;
+export interface RequesterResponse {
+  requester_id: string;
   name: string;
-  blood_type: string;
   email: string;
+  phone: string | null;
   latitude: number;
   longitude: number;
   created_at: string;
 }
 
-export async function registerPatient(data: PatientCreate): Promise<PatientResponse> {
-  const res = await fetchWithTimeout(`${API_BASE}/requests/patients`, {
+export async function registerRequester(data: RequesterCreate): Promise<RequesterResponse> {
+  const res = await fetchWithTimeout(`${API_BASE}/requesters`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   });
   if (!res.ok) {
     const body = await res.json().catch(() => null);
-    throw new Error(extractError(body, `Patient registration failed (${res.status})`));
+    throw new Error(extractError(body, `Requester registration failed (${res.status})`));
   }
   return res.json();
 }
@@ -226,8 +198,7 @@ export async function registerPatient(data: PatientCreate): Promise<PatientRespo
 // Request types
 // ---------------------------------------------------------------------------
 export interface RequestCreate {
-  hospital_id?: string | null;
-  patient_id?: string | null;
+  requester_id: string;
   blood_type: string;
   units_needed: number;
   urgency: string;
@@ -235,15 +206,11 @@ export interface RequestCreate {
 
 export interface RequestResponse {
   request_id: string;
-  requester_type: string;
-  hospital_id: string | null;
-  patient_id: string | null;
+  requester_id: string;
   blood_type: string;
   units_needed: number;
   urgency: string;
   status: string;
-  verified_by_hospital: boolean;
-  verification_code: string | null;
   created_at: string;
   matched_donors: number;
 }
@@ -261,18 +228,47 @@ export async function createRequest(data: RequestCreate): Promise<RequestRespons
   return res.json();
 }
 
-export async function verifyRequest(
-  requestId: string,
-  code: string,
-): Promise<{ request_id: string; verified: boolean; matched_donors: number }> {
-  const res = await fetchWithTimeout(`${API_BASE}/requests/${requestId}/verify`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ code }),
-  });
+// ---------------------------------------------------------------------------
+// Candidate donors
+// ---------------------------------------------------------------------------
+export interface CandidateDonor {
+  donor_id: string;
+  name: string;
+  blood_type: string;
+  distance_km: number;
+  last_donation_date: string | null;
+  available: boolean;
+}
+
+export async function getCandidateDonors(requestId: string): Promise<CandidateDonor[]> {
+  const res = await fetchWithTimeout(`${API_BASE}/requests/${requestId}/candidate-donors`);
   if (!res.ok) {
     const body = await res.json().catch(() => null);
-    throw new Error(extractError(body, `Verification failed (${res.status})`));
+    throw new Error(extractError(body, `Failed to fetch candidates (${res.status})`));
+  }
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Accept donor
+// ---------------------------------------------------------------------------
+export async function acceptDonor(
+  requestId: string,
+  donorId: string,
+): Promise<{
+  match_id: string;
+  donor_id: string;
+  donor_name: string;
+  response: string;
+  request_status: string;
+}> {
+  const res = await fetchWithTimeout(
+    `${API_BASE}/requests/${requestId}/accept-donor/${donorId}`,
+    { method: "POST", headers: { "Content-Type": "application/json" } },
+  );
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(extractError(body, `Failed to accept donor (${res.status})`));
   }
   return res.json();
 }
@@ -286,13 +282,17 @@ export interface MatchDetail {
   donor_id: string;
   response: string;
   notified_at: string | null;
+  accepted_at: string | null;
+  confirmed_at: string | null;
+  contact_shared_at: string | null;
   donor_name?: string;
   donor_blood_type?: string;
+  donor_email?: string;
+  donor_phone?: string | null;
   distance_km?: number;
 }
 
 export interface RequestWithMatches extends RequestResponse {
-  verification_code: string | null;
   matches: MatchDetail[];
 }
 
@@ -306,12 +306,50 @@ export async function getRequestMatches(requestId: string): Promise<RequestWithM
 }
 
 // ---------------------------------------------------------------------------
+// Chat messages
+// ---------------------------------------------------------------------------
+export interface ChatMessage {
+  message_id: string;
+  match_id: string;
+  sender_type: string;
+  sender_id: string;
+  body: string;
+  created_at: string;
+}
+
+export async function getMessages(matchId: string): Promise<ChatMessage[]> {
+  const res = await fetchWithTimeout(`${API_BASE}/matches/${matchId}/messages`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(extractError(body, `Failed to fetch messages (${res.status})`));
+  }
+  return res.json();
+}
+
+export async function sendMessage(
+  matchId: string,
+  senderType: "requester" | "donor",
+  senderId: string,
+  body: string,
+): Promise<ChatMessage> {
+  const res = await fetchWithTimeout(`${API_BASE}/matches/${matchId}/messages`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sender_type: senderType, sender_id: senderId, body }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(extractError(body, `Failed to send message (${res.status})`));
+  }
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
 // Live dashboard types
 // ---------------------------------------------------------------------------
 export interface ActiveRequest {
   request_id: string;
-  requester_type: string;
-  source_name: string;
+  requester_name: string;
   blood_type: string;
   units_needed: number;
   urgency: string;

@@ -1,7 +1,7 @@
 /**
  * LiveIndicator — pulsing dot with optional label.
  *
- * Used in the hospital layout, patient status page, and request
+ * Used in the requester layout, patient status page, and request
  * dashboard to show that data is updating in real time.
  */
 

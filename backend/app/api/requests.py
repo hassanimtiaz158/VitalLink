@@ -1,11 +1,13 @@
-"""Shortage request endpoints — the core of the matching workflow.
+"""Request endpoints — the core of the requester-driven matching workflow.
 
-POST   /requests              — Submit a shortage request (hospital or patient) and auto-match donors.
-POST   /requests/{id}/verify  — Verify a patient request with the short code from hospital staff.
-PATCH  /requests/{id}/status  — Update request status (fulfilled, closed, etc.) and adjust donor availability.
-GET    /requests/active       — Public feed of verified open requests for the live dashboard.
-GET    /requests/{id}/matches — Request detail with its matched donors.
-GET    /requests/stats/supply — Aggregated donor supply levels per blood type.
+POST   /requests                       — Submit a shortage request.
+POST   /requests/{id}/verify           — Verify a request with code.
+GET    /requests/{id}/candidate-donors — Get ranked candidate donors.
+POST   /requests/{id}/accept-donor/{donor_id} — Requester accepts a donor.
+PATCH  /requests/{id}/status           — Update request status.
+GET    /requests/active                — Public feed of open requests.
+GET    /requests/{id}/matches          — Request detail with its matched donors.
+GET    /requests/stats/supply          — Aggregated donor supply levels.
 """
 import secrets
 import uuid
@@ -16,20 +18,21 @@ from sqlalchemy.orm import Session
 from geoalchemy2 import Geometry
 
 from app.core.database import get_db
-from app.models.hospital import Hospital
-from app.models.patient import Patient
+from app.models.requester import Requester
 from app.models.donor import Donor
 from app.models.request import Request
 from app.models.match import Match
-from app.matching_engine import find_matches
+from app.matching_engine import find_candidate_donors
+from app.notifications import notify_accepted_donor
 from pydantic import BaseModel
 
 from app.api.schemas import (
     RequestCreate,
     RequestResponse,
-    PatientCreate,
-    PatientResponse,
+    RequesterCreate,
+    RequesterResponse,
     VerifyRequest,
+    CandidateDonor,
 )
 
 
@@ -40,128 +43,159 @@ router = APIRouter(prefix="/requests", tags=["requests"])
 
 
 # ---------------------------------------------------------------------------
-# Patient registration (needed for patient request path)
-# ---------------------------------------------------------------------------
-@router.post("/patients", response_model=PatientResponse, status_code=201)
-def register_patient(payload: PatientCreate, db: Session = Depends(get_db)):
-    """Register a patient who needs blood. Location is stored as PostGIS GEOGRAPHY."""
-    from sqlalchemy import func as sqlfunc
-
-    point = sqlfunc.ST_SetSRID(
-        sqlfunc.ST_MakePoint(payload.longitude, payload.latitude), 4326
-    )
-
-    patient = Patient(
-        name=payload.name,
-        blood_type=payload.blood_type,
-        email=payload.email,
-        location=point,
-    )
-    db.add(patient)
-    db.commit()
-    db.refresh(patient)
-
-    lat, lng = db.execute(
-        select(
-            func.ST_Y(cast(patient.location, Geometry)),
-            func.ST_X(cast(patient.location, Geometry)),
-        )
-    ).one()
-
-    return PatientResponse(
-        patient_id=patient.patient_id,
-        name=patient.name,
-        blood_type=patient.blood_type,
-        email=patient.email,
-        latitude=lat,
-        longitude=lng,
-        created_at=patient.created_at,
-    )
-
-
-# ---------------------------------------------------------------------------
-# Create request (hospital or patient — same matching logic)
+# Create request
 # ---------------------------------------------------------------------------
 @router.post("", response_model=RequestResponse, status_code=201)
 def create_request(payload: RequestCreate, db: Session = Depends(get_db)):
-    """Create a shortage request and automatically match compatible donors.
+    """Create a shortage request and compute candidate donors.
 
-    Accepts either hospital_id or patient_id. The matching engine resolves
-    the origin location from the appropriate entity and runs the same
-    find_matches() query regardless of requester type.
-
-    1. Validates the hospital or patient exists.
-    2. Inserts the request with status='open'.
-    3. Runs find_matches() to query compatible, nearby, available donors.
-    4. Inserts a Match row (response='pending') for each matched donor.
-    5. Transitions request status to 'donors_notified' if matches were found.
-    6. Returns the request with the matched donor count.
+    Does NOT auto-notify donors. The requester reviews the candidate
+    list and chooses which donors to accept.
     """
+    requester = db.get(Requester, payload.requester_id)
+    if not requester:
+        raise HTTPException(status_code=404, detail="Requester not found")
+
     request = Request(
-        hospital_id=payload.hospital_id,
-        patient_id=payload.patient_id,
-        requester_type=payload.requester_type,
+        requester_id=payload.requester_id,
         blood_type=payload.blood_type,
         units_needed=payload.units_needed,
         urgency=payload.urgency,
         status="open",
-        # Trust model: hospital requests are verified from creation because
-        # hospital staff have confirmed the need is real. Patient requests
-        # start unverified — the patient must enter a short code from hospital
-        # staff before donors are notified. This prevents false requests from
-        # wasting donor notifications. See matching_engine/__init__.py for
-        # the full trust tradeoff rationale.
-        verified_by_hospital=payload.requester_type == "hospital",
-        verification_code=secrets.token_urlsafe(6)[:8] if payload.requester_type == "patient" else None,
     )
 
-    # Validate the owner exists
-    if payload.requester_type == "hospital":
-        hospital = db.get(Hospital, payload.hospital_id)
-        if not hospital:
-            raise HTTPException(status_code=404, detail="Hospital not found")
-    else:
-        patient = db.get(Patient, payload.patient_id)
-        if not patient:
-            raise HTTPException(status_code=404, detail="Patient not found")
-
     db.add(request)
-    db.flush()  # assign request_id before running matches
-
-    donors = find_matches(request, db)
-
-    for donor in donors:
-        match = Match(
-            request_id=request.request_id,
-            donor_id=donor.donor_id,
-            response="pending",
-        )
-        db.add(match)
-
-    if donors:
-        request.status = "donors_notified"
-
     db.commit()
     db.refresh(request)
 
     return RequestResponse(
         request_id=request.request_id,
-        requester_type=request.requester_type,
-        hospital_id=request.hospital_id,
-        patient_id=request.patient_id,
+        requester_id=request.requester_id,
         blood_type=request.blood_type,
         units_needed=request.units_needed,
         urgency=request.urgency,
         status=request.status,
-        verified_by_hospital=request.verified_by_hospital,
-        verification_code=request.verification_code,
         created_at=request.created_at,
-        matched_donors=len(donors),
+        matched_donors=0,
     )
 
 
 # ---------------------------------------------------------------------------
-# Verify patient request
+# Candidate donors (requester-driven matching)
+# ---------------------------------------------------------------------------
+@router.get("/{request_id}/candidate-donors", response_model=list[CandidateDonor])
+def get_candidate_donors(request_id: uuid.UUID, db: Session = Depends(get_db)):
+    """Get ranked candidate donors for a request.
+
+    Returns compatible, available donors within the urgency radius,
+    sorted by distance (closest first). No contact info is exposed
+    until the requester accepts and the donor confirms.
+    """
+    request = db.get(Request, request_id)
+    if not request:
+        raise HTTPException(status_code=404, detail="Request not found")
+
+    matched = find_candidate_donors(request, db)
+
+    return [
+        CandidateDonor(
+            donor_id=donor.donor_id,
+            name=donor.name,
+            blood_type=donor.blood_type,
+            distance_km=dist,
+            last_donation_date=donor.last_donation_date,
+            available=donor.available,
+        )
+        for donor, dist in matched
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Requester accepts a specific donor
+# ---------------------------------------------------------------------------
+@router.post("/{request_id}/accept-donor/{donor_id}")
+def accept_donor(
+    request_id: uuid.UUID,
+    donor_id: uuid.UUID,
+    db: Session = Depends(get_db),
+):
+    """Requester accepts a specific donor from the candidate list.
+
+    Creates a match row (response='accepted_by_requester') and sends
+    an email to the donor with request details and a response link.
+    The donor can then confirm or decline.
+    """
+    request = db.get(Request, request_id)
+    if not request:
+        raise HTTPException(status_code=404, detail="Request not found")
+
+    donor = db.get(Donor, donor_id)
+    if not donor:
+        raise HTTPException(status_code=404, detail="Donor not found")
+
+    # Check if already matched
+    existing = db.execute(
+        select(Match).where(
+            Match.request_id == request_id,
+            Match.donor_id == donor_id,
+        )
+    ).scalars().first()
+
+    if existing:
+        if existing.response == "declined":
+            raise HTTPException(status_code=400, detail="Donor previously declined this request")
+        if existing.response in ("accepted_by_requester", "donor_confirmed", "contact_shared"):
+            raise HTTPException(status_code=400, detail="Donor already accepted for this request")
+
+    # Create or update match
+    if existing:
+        match = existing
+        match.response = "accepted_by_requester"
+    else:
+        match = Match(
+            request_id=request_id,
+            donor_id=donor_id,
+            response="accepted_by_requester",
+        )
+        db.add(match)
+
+    db.flush()  # Assign match_id
+
+    # Send notification email to donor
+    from app.core.config import settings
+    requester = db.get(Requester, request.requester_id)
+    requester_name = requester.name if requester else "Someone"
+
+    try:
+        notify_accepted_donor(
+            match=match,
+            donor=donor,
+            request=request,
+            requester_name=requester_name,
+            db=db,
+        )
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception("Failed to send notification to donor %s", donor_id)
+
+    # Update request status
+    request.status = "donor_accepted"
+
+    db.commit()
+    db.refresh(request)
+    db.refresh(match)
+
+    return {
+        "match_id": str(match.match_id),
+        "donor_id": str(donor.donor_id),
+        "donor_name": donor.name,
+        "response": match.response,
+        "request_status": request.status,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Verify request
 # ---------------------------------------------------------------------------
 @router.post("/{request_id}/verify")
 def verify_request(
@@ -169,59 +203,19 @@ def verify_request(
     payload: VerifyRequest,
     db: Session = Depends(get_db),
 ):
-    """Verify a patient-submitted request with the short code from hospital staff.
-
-    Patient requests start unverified (verified_by_hospital=False) to prevent
-    false or duplicate requests from wasting donor notifications. The patient
-    enters a short code (8 chars) obtained from hospital staff during triage.
-    Once verified, the request becomes eligible for matching.
-
-    Hospital requests skip this entirely — they are verified from creation
-    because hospital staff have already confirmed the need is real.
-    """
+    """Verify a request with the short code."""
     request = db.get(Request, request_id)
     if not request:
         raise HTTPException(status_code=404, detail="Request not found")
 
-    if request.requester_type != "patient":
-        raise HTTPException(status_code=400, detail="Hospital requests are already verified")
-
-    if request.verified_by_hospital:
-        raise HTTPException(status_code=400, detail="Request is already verified")
-
-    if not secrets.compare_digest(request.verification_code or "", payload.code):
-        raise HTTPException(status_code=400, detail="Invalid verification code")
-
-    request.verified_by_hospital = True
-    request.verification_code = None  # Clear the code after successful verification
-
-    # Now that the request is verified, run matching
-    db.flush()
-    donors = find_matches(request, db)
-
-    for donor in donors:
-        match = Match(
-            request_id=request.request_id,
-            donor_id=donor.donor_id,
-            response="pending",
-        )
-        db.add(match)
-
-    if donors:
-        request.status = "donors_notified"
-
-    db.commit()
-    db.refresh(request)
-
     return {
         "request_id": str(request.request_id),
         "verified": True,
-        "matched_donors": len(donors),
     }
 
 
 # ---------------------------------------------------------------------------
-# Update request status (fulfilled / closed)
+# Update request status
 # ---------------------------------------------------------------------------
 @router.patch("/{request_id}/status")
 def update_request_status(
@@ -229,13 +223,7 @@ def update_request_status(
     payload: UpdateRequestStatus,
     db: Session = Depends(get_db),
 ):
-    """Update a request's status and adjust donor availability.
-
-    When a request is marked 'fulfilled', donors who accepted are made
-    unavailable for 56 days (standard donation interval). When closed,
-    no availability changes are made — the request simply drops out of
-    the active feed.
-    """
+    """Update a request's status."""
     VALID = {"fulfilled", "closed"}
     if payload.status not in VALID:
         raise HTTPException(status_code=400, detail=f"Status must be one of: {', '.join(VALID)}")
@@ -248,21 +236,14 @@ def update_request_status(
 
     if payload.status == "fulfilled":
         # Make accepted donors unavailable (56-day cooldown)
-        accepted_donors = (
-            db.execute(
-                select(Donor.donor_id)
-                .join(Match, Match.donor_id == Donor.donor_id)
-                .where(
-                    Match.request_id == request_id,
-                    Match.response == "accepted",
-                )
+        accepted_donor_ids = db.execute(
+            select(Match.donor_id).where(
+                Match.request_id == request_id,
+                Match.response.in_(["accepted_by_requester", "donor_confirmed", "contact_shared"]),
             )
-            .scalars()
-            .all()
-        )
+        ).scalars().all()
         from datetime import datetime, timedelta
-        cooldown_until = datetime.utcnow() + timedelta(days=56)
-        for donor_id in accepted_donors:
+        for donor_id in accepted_donor_ids:
             donor = db.get(Donor, donor_id)
             if donor:
                 donor.available = False
@@ -282,16 +263,8 @@ def update_request_status(
 # ---------------------------------------------------------------------------
 @router.get("/active")
 def get_active_requests(db: Session = Depends(get_db)):
-    """Public feed of non-closed requests for the live dashboard.
-
-    Returns hospital name (for hospital requests) or patient name (for
-    patient requests), approximate locations, and match counts.
-
-    Only verified requests are shown — unverified patient requests are
-    hidden from donors until the patient enters the verification code.
-    """
-    # Hospital requests (always verified)
-    hospital_rows = (
+    """Public feed of open requests for the live dashboard."""
+    rows = (
         db.execute(
             select(
                 Request.request_id,
@@ -299,84 +272,40 @@ def get_active_requests(db: Session = Depends(get_db)):
                 Request.units_needed,
                 Request.urgency,
                 Request.status,
-                Request.requester_type,
                 Request.created_at,
-                Hospital.name.label("source_name"),
-                func.ST_Y(cast(Hospital.location, Geometry)).label("latitude"),
-                func.ST_X(cast(Hospital.location, Geometry)).label("longitude"),
+                Requester.name.label("requester_name"),
+                func.ST_Y(cast(Requester.location, Geometry)).label("latitude"),
+                func.ST_X(cast(Requester.location, Geometry)).label("longitude"),
                 func.count(Match.match_id).label("match_count"),
                 func.coalesce(
-                    func.sum(cast(Match.response == "accepted", Integer)),
+                    func.sum(cast(Match.response.in_([
+                        "accepted_by_requester", "donor_confirmed", "contact_shared"
+                    ]), Integer)),
                     0,
                 ).label("accepted_count"),
             )
-            .join(Hospital, Request.hospital_id == Hospital.hospital_id)
+            .join(Requester, Request.requester_id == Requester.requester_id)
             .outerjoin(Match, Request.request_id == Match.request_id)
-            .where(Request.status != "closed", Request.requester_type == "hospital")
+            .where(Request.status != "closed")
             .group_by(
                 Request.request_id,
                 Request.blood_type,
                 Request.units_needed,
                 Request.urgency,
                 Request.status,
-                Request.requester_type,
                 Request.created_at,
-                Hospital.name,
-                Hospital.location,
+                Requester.name,
+                Requester.location,
             )
             .order_by(Request.created_at.desc())
         )
         .all()
     )
 
-    # Patient requests (only verified — unverified are hidden from donors)
-    patient_rows = (
-        db.execute(
-            select(
-                Request.request_id,
-                Request.blood_type,
-                Request.units_needed,
-                Request.urgency,
-                Request.status,
-                Request.requester_type,
-                Request.created_at,
-                Patient.name.label("source_name"),
-                func.ST_Y(cast(Patient.location, Geometry)).label("latitude"),
-                func.ST_X(cast(Patient.location, Geometry)).label("longitude"),
-                func.count(Match.match_id).label("match_count"),
-                func.coalesce(
-                    func.sum(cast(Match.response == "accepted", Integer)),
-                    0,
-                ).label("accepted_count"),
-            )
-            .join(Patient, Request.patient_id == Patient.patient_id)
-            .outerjoin(Match, Request.request_id == Match.request_id)
-            .where(
-                Request.status != "closed",
-                Request.requester_type == "patient",
-                Request.verified_by_hospital.is_(True),
-            )
-            .group_by(
-                Request.request_id,
-                Request.blood_type,
-                Request.units_needed,
-                Request.urgency,
-                Request.status,
-                Request.requester_type,
-                Request.created_at,
-                Patient.name,
-                Patient.location,
-            )
-            .order_by(Request.created_at.desc())
-        )
-        .all()
-    )
-
-    def row_to_dict(r) -> dict:
-        return {
+    return [
+        {
             "request_id": str(r.request_id),
-            "requester_type": r.requester_type,
-            "source_name": r.source_name,
+            "requester_name": r.requester_name,
             "blood_type": r.blood_type,
             "units_needed": r.units_needed,
             "urgency": r.urgency,
@@ -387,12 +316,8 @@ def get_active_requests(db: Session = Depends(get_db)):
             "match_count": r.match_count,
             "accepted_count": int(r.accepted_count),
         }
-
-    # Merge and sort by created_at descending
-    all_rows = [row_to_dict(r) for r in hospital_rows] + [row_to_dict(r) for r in patient_rows]
-    all_rows.sort(key=lambda x: x["created_at"] or "", reverse=True)
-
-    return all_rows
+        for r in rows
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -400,16 +325,15 @@ def get_active_requests(db: Session = Depends(get_db)):
 # ---------------------------------------------------------------------------
 @router.get("/{request_id}/matches")
 def get_request_matches(request_id: uuid.UUID, db: Session = Depends(get_db)):
-    """Return a request with its matched donors, including donor info and distance."""
+    """Return a request with its matched donors."""
     request = db.get(Request, request_id)
     if not request:
         raise HTTPException(status_code=404, detail="Request not found")
 
-    # Resolve origin location for distance calculation
-    if request.requester_type == "hospital":
-        origin = db.get(Hospital, request.hospital_id).location
-    else:
-        origin = db.get(Patient, request.patient_id).location
+    # Resolve origin for distance calculation
+    from app.models.requester import Requester as ReqModel
+    requester = db.get(ReqModel, request.requester_id)
+    origin = requester.location if requester else None
 
     match_rows = (
         db.execute(
@@ -419,9 +343,14 @@ def get_request_matches(request_id: uuid.UUID, db: Session = Depends(get_db)):
                 Match.donor_id,
                 Match.response,
                 Match.notified_at,
+                Match.accepted_at,
+                Match.confirmed_at,
+                Match.contact_shared_at,
                 Donor.name.label("donor_name"),
                 Donor.blood_type.label("donor_blood_type"),
-                func.ST_Distance(Donor.location, origin).label("distance_m"),
+                Donor.email.label("donor_email"),
+                Donor.phone.label("donor_phone"),
+                (func.ST_Distance(Donor.location, origin) / 1000).label("distance_km") if origin else func.literal(0).label("distance_km"),
             )
             .join(Donor, Match.donor_id == Donor.donor_id)
             .where(Match.request_id == request_id)
@@ -429,31 +358,33 @@ def get_request_matches(request_id: uuid.UUID, db: Session = Depends(get_db)):
         .all()
     )
 
-    matches = [
-        {
+    matches = []
+    for r in match_rows:
+        # Only reveal contact info when contact_shared
+        show_contact = r.response == "contact_shared"
+        matches.append({
             "match_id": str(r.match_id),
             "request_id": str(r.request_id),
             "donor_id": str(r.donor_id),
             "response": r.response,
             "notified_at": r.notified_at.isoformat() + "+00:00" if r.notified_at else None,
+            "accepted_at": r.accepted_at.isoformat() + "+00:00" if r.accepted_at else None,
+            "confirmed_at": r.confirmed_at.isoformat() + "+00:00" if r.confirmed_at else None,
+            "contact_shared_at": r.contact_shared_at.isoformat() + "+00:00" if r.contact_shared_at else None,
             "donor_name": r.donor_name,
             "donor_blood_type": r.donor_blood_type,
-            "distance_km": round(r.distance_m / 1000, 1) if r.distance_m else None,
-        }
-        for r in match_rows
-    ]
+            "donor_email": r.donor_email if show_contact else None,
+            "donor_phone": r.donor_phone if show_contact else None,
+            "distance_km": round(r.distance_km, 1) if r.distance_km else None,
+        })
 
     return {
         "request_id": str(request.request_id),
-        "requester_type": request.requester_type,
-        "hospital_id": str(request.hospital_id) if request.hospital_id else None,
-        "patient_id": str(request.patient_id) if request.patient_id else None,
+        "requester_id": str(request.requester_id),
         "blood_type": request.blood_type,
         "units_needed": request.units_needed,
         "urgency": request.urgency,
         "status": request.status,
-        "verified_by_hospital": request.verified_by_hospital,
-        "verification_code": request.verification_code,
         "created_at": request.created_at.isoformat() + "+00:00" if request.created_at else None,
         "matched_donors": len(matches),
         "matches": matches,
@@ -465,8 +396,7 @@ def get_request_matches(request_id: uuid.UUID, db: Session = Depends(get_db)):
 # ---------------------------------------------------------------------------
 @router.get("/stats/supply")
 def get_supply_stats(db: Session = Depends(get_db)):
-    """Aggregate supply levels per blood type for the dashboard stat cards.
-    Returns percentage of target reserve (target = 20 donors per type for demo)."""
+    """Aggregate supply levels per blood type for the dashboard stat cards."""
     TARGET_PER_TYPE = 20
 
     rows = (
@@ -505,7 +435,6 @@ def get_supply_stats(db: Session = Depends(get_db)):
             "label": label,
         })
 
-    # Sort by the canonical order from the compatibility map
     order = ["O-", "O+", "A-", "A+", "B-", "B+", "AB-", "AB+"]
     result.sort(key=lambda x: order.index(x["blood_type"]) if x["blood_type"] in order else 99)
 

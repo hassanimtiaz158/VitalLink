@@ -1,5 +1,5 @@
 /**
- * LiveMap — Interactive Leaflet.js map showing donors and hospital requests.
+ * LiveMap — Interactive Leaflet.js map showing donors and blood requests.
  *
  * - Request markers: urgency-coloured (red=critical, amber=high, teal=routine)
  *   with pulsing animation for critical requests.
@@ -145,7 +145,7 @@ export default function LiveMap({ requests, donors }: Props) {
 
         const popupHtml = `
           <div style="font-family:'IBM Plex Sans',system-ui,sans-serif;min-width:160px;padding:2px;">
-            <div style="font-weight:700;font-size:14px;margin-bottom:4px;">${r.source_name}</div>
+            <div style="font-weight:700;font-size:14px;margin-bottom:4px;">${r.requester_name}</div>
             <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px;">
               <span style="
                 display:inline-block;padding:2px 8px;border-radius:4px;

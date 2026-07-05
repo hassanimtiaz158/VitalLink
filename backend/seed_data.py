@@ -1,242 +1,213 @@
-"""Seed the VitalLink database with synthetic donors and hospital requests.
+"""Seed the database with synthetic donors and requester-driven requests.
 
-Usage:
-    python seed_data.py              # uses DATABASE_URL from .env or defaults
-    python seed_data.py --clear      # drop all data before seeding
-
-Generates ~100 donors and ~10 requests spread across New York City with
-realistic blood-type distribution and pre-set critical requests for demo drama.
+Generates:
+  - 100 donors with Pakistani names around Lahore
+  - 5 requesters
+  - 10 requests at various stages (open, donor_accepted, contact_shared)
+  - Pre-seeded matches at different states for the live demo
 """
-import argparse
 import random
 import uuid
-from datetime import date, timedelta
+from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import text
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 
-from app.core.database import engine, SessionLocal
-from app.models.hospital import Hospital
+from app.core.database import engine, Base
 from app.models.donor import Donor
+from app.models.requester import Requester
 from app.models.request import Request
 from app.models.match import Match
 
-# ---------------------------------------------------------------------------
+
 # Lahore, Pakistan bounding box
-# ---------------------------------------------------------------------------
-LAHORE_CENTER = (31.5204, 74.3587)
-LAHORE_BOUNDS = {
-    "lat_min": 31.4000,  # southern edge
-    "lat_max": 31.6500,  # northern edge
-    "lon_min": 74.2000,  # western edge
-    "lon_max": 74.5000,  # eastern edge
-}
+LAHORE_LAT_MIN, LAHORE_LAT_MAX = 31.40, 31.65
+LAHORE_LNG_MIN, LAHORE_LNG_MAX = 74.20, 74.50
 
-# ---------------------------------------------------------------------------
-# Realistic US blood-type distribution (approximate percentages)
-# ---------------------------------------------------------------------------
-BLOOD_TYPE_WEIGHTS = {
-    "O+":  37.4,
-    "O-":   6.6,
-    "A+":  35.7,
-    "A-":   6.3,
-    "B+":   8.5,
-    "B-":   1.5,
-    "AB+":  3.4,
-    "AB-":  0.6,
-}
-BLOOD_TYPES = list(BLOOD_TYPE_WEIGHTS.keys())
-BLOOD_WEIGHTS = list(BLOOD_TYPE_WEIGHTS.values())
-
-# ---------------------------------------------------------------------------
-# Synthetic names (Pakistani)
-# ---------------------------------------------------------------------------
-FIRST_NAMES = [
-    "Ahmed", "Fatima", "Ali", "Ayesha", "Hassan", "Zainab", "Usman", "Maryam",
-    "Omar", "Sana", "Bilal", "Hira", "Kamal", "Noor", "Tariq", "Amna",
-    "Faisal", "Rabia", "Imran", "Sadia", "Asif", "Nida", "Shahid", "Bushra",
-    "Daniyal", "Mehreen", "Farhan", "Iqra", "Hamza", "Laiba", "Danish", "Yasmin",
-    "Rizwan", "Hania", "Saad", "Amina", "Adil", "Zara", "Khalid", "Saima",
-    "Noman", "Rida", "Waqas", "Maham", "Saif", "Eman", "Junaid", "Aisha",
-    "Shehryar", "Tamanna", "Arslan", "Ismat", "Faizan", "Nazia", "Sufyan", "Rubab",
-    "Nabeel", "Aleeza", "Taimoor", "Shanza", "Zubair", "Bisma", "Moiz", "Aqsa",
-    "Haris", "Kinza", "Basit", "Maha", "Affan", "Tuba", "Shayan", "Palwasha",
-    "Rohail", "Amber", "Ayaan", "Saba", "Shoaib", "Naila", "Osama", "Madiha",
-    "Arsalan", "Rukhsana", "Bilal", "Samina", "Waleed", "Farah", "Zeeshan", "Shazia",
-    "Yasir", "Gul", "Abdul", "Hina", "Zubair", "Nadia", "Rashid", "Parveen",
+# Pakistani first/last names
+FIRST_NAMES_M = [
+    "Ahmed", "Ali", "Bilal", "Danish", "Faizan", "Hamza", "Imran", "Kamal",
+    "Moiz", "Osama", "Saad", "Tariq", "Usman", "Waqas", "Zeeshan", "Zubair",
+    "Asif", "Basit", "Farhan", "Haris", "Ismail", "Junaid", "Khalid", "Liaqat",
+    "Naveed", "Omar", "Rashid", "Shehryar", "Umar", "Yasir",
+]
+FIRST_NAMES_F = [
+    "Amina", "Ayesha", "Bisma", "Farah", "Hira", "Iqra", "Laiba", "Maha",
+    "Naila", "Rabia", "Saba", "Sadia", "Sana", "Saima", "Shanza", "Tamanna",
+    "Tuba", "Yasmin", "Zara", "Aleeza", "Maryam", "Parveen",
 ]
 LAST_NAMES = [
-    "Khan", "Malik", "Butt", "Chaudhry", "Sheikh", "Siddiqui", "Qureshi", "Rao",
-    "Bhatti", "Gill", "Awan", "Dogar", "Cheema", "Gondal", "Jatt", "Warraich",
-    "Khokhar", "Niazi", "Syed", "Hussain", "Shah", "Raza", "Mirza", "Baig",
-    "Shamsi", "Ansari", "Akhtar", "Sial", "Durrani", "Mughal", "Bukhari", "Tareen",
-    "Nawaz", "Kayani", "Lodhi", "Khosa", "Dahar", "Bizenjo", "Mazari", "Rind",
-    "Jamali", "Zehri", "Khattak", "Orakzai", "Mehsud", "Wazir", "Yusufzai", "Swati",
-    "Chishti", "Naqvi", "Jafri", "Tirmizi", "Abbasi", "Shirazi", "Gilani", "Zaidi",
-    "Kazmi", "Nomani", "Farooqi", "Usmani", "Deobandi", "Barelvi", "Shah", "Nizami",
-    "Ahmad", "Ismail", "Ibrahim", "Khalil", "Memon", "Memom", "Dawood", "Adamjee",
-    "Lakhani", "Habib", "Dossa", "Poonawala", "Bharucha", "Patel", "Kapadia", "Vakil",
-    "Meer", "Hyder", "Abbas", "Jilani", "Gardezi", "Sahi", "Bhutta", "Lashari",
+    "Ahmad", "Butt", "Cheema", "Chaudhry", "Durrani", "Gill", "Hussain",
+    "Jafri", "Khalil", "Khan", "Malik", "Memon", "Niazi", "Qureshi",
+    "Rao", "Siddiqui", "Syed", "Tirmizi", "Wazir", "Zaidi",
 ]
 
-# ---------------------------------------------------------------------------
-# Hospital locations (real Lahore hospitals with approximate coordinates)
-# ---------------------------------------------------------------------------
-HOSPITALS = [
-    {"name": "Jinnah Hospital Lahore",              "lat": 31.5160, "lon": 74.3480},
-    {"name": "Mayo Hospital Lahore",                "lat": 31.5580, "lon": 74.3500},
-    {"name": "Services Hospital Lahore",            "lat": 31.5530, "lon": 74.3460},
-    {"name": "General Hospital Lahore",             "lat": 31.5450, "lon": 74.3350},
-    {"name": "Punjab Institute of Cardiology",      "lat": 31.5500, "lon": 74.3420},
-    {"name": "Lahore General Hospital",             "lat": 31.5750, "lon": 74.3530},
-    {"name": "Ittefaq Hospital Lahore",             "lat": 31.5080, "lon": 74.3400},
-    {"name": "National Hospital Lahore",            "lat": 31.5200, "lon": 74.3700},
-    {"name": "Shaukat Khanum Memorial Hospital",    "lat": 31.4810, "lon": 74.3600},
-    {"name": "Hameed Latif Hospital Lahore",        "lat": 31.5050, "lon": 74.3550},
+BLOOD_TYPES = ["O-", "O+", "A-", "A+", "B-", "B+", "AB-", "AB+"]
+URGENCIES = ["critical", "high", "routine"]
+
+# Pre-seeded requesters
+REQUESTERS = [
+    {"name": "Ahmed Khan", "email": "ahmed.khan@test.com", "phone": "+923001234567", "lat": 31.5204, "lng": 74.3587},
+    {"name": "Fatima Ali", "email": "fatima.ali@test.com", "phone": "+923009876543", "lat": 31.5500, "lng": 74.3500},
+    {"name": "Bilal Malik", "email": "bilal.malik@test.com", "phone": None, "lat": 31.4800, "lng": 74.3200},
+    {"name": "Sana Sheikh", "email": "sana.sheikh@test.com", "phone": "+923211234567", "lat": 31.5800, "lng": 74.4000},
+    {"name": "Omar Nawaz", "email": "omar.nawaz@test.com", "phone": "+923331234567", "lat": 31.4500, "lng": 74.2800},
+]
+
+# Pre-seeded requests
+REQUESTS = [
+    {"req_idx": 0, "blood_type": "O+", "units": 2, "urgency": "critical", "status": "open"},
+    {"req_idx": 0, "blood_type": "A+", "units": 1, "urgency": "high", "status": "open"},
+    {"req_idx": 1, "blood_type": "B-", "units": 1, "urgency": "critical", "status": "donor_accepted"},
+    {"req_idx": 1, "blood_type": "O-", "units": 3, "urgency": "high", "status": "open"},
+    {"req_idx": 2, "blood_type": "AB+", "units": 1, "urgency": "routine", "status": "open"},
+    {"req_idx": 2, "blood_type": "A-", "units": 2, "urgency": "high", "status": "contact_shared"},
+    {"req_idx": 3, "blood_type": "O+", "units": 1, "urgency": "critical", "status": "donor_accepted"},
+    {"req_idx": 3, "blood_type": "B+", "units": 1, "urgency": "routine", "status": "open"},
+    {"req_idx": 4, "blood_type": "A+", "units": 2, "urgency": "high", "status": "open"},
+    {"req_idx": 4, "blood_type": "O-", "units": 1, "urgency": "critical", "status": "donor_confirmed"},
 ]
 
 
-def random_point_in_city() -> tuple[float, float]:
-    """Return a random (lat, lon) within the Lahore bounding box."""
-    lat = random.uniform(LAHORE_BOUNDS["lat_min"], LAHORE_BOUNDS["lat_max"])
-    lon = random.uniform(LAHORE_BOUNDS["lon_min"], LAHORE_BOUNDS["lon_max"])
-    return round(lat, 5), round(lon, 5)
-
-
-def random_blood_type() -> str:
-    """Pick a blood type following realistic population distribution."""
-    return random.choices(BLOOD_TYPES, weights=BLOOD_WEIGHTS, k=1)[0]
-
-
-def random_name() -> str:
-    return f"{random.choice(FIRST_NAMES)} {random.choice(LAST_NAMES)}"
-
-
-def random_email(name: str) -> str:
-    slug = name.lower().replace(" ", ".")
-    domains = ["example.com", "mailinator.com", "test.org"]
-    return f"{slug}@{random.choice(domains)}"
-
-
-def clear_db(session: Session) -> None:
-    """Delete all rows from matches, requests, donors, hospitals, patients."""
-    session.execute(text("DELETE FROM matches"))
-    session.execute(text("DELETE FROM requests"))
-    session.execute(text("DELETE FROM donors"))
-    session.execute(text("DELETE FROM hospitals"))
-    session.execute(text("DELETE FROM patients"))
-    session.commit()
-    print("Cleared all data.")
-
-
-def seed_hospitals(session: Session) -> list[Hospital]:
-    """Insert the preset NYC hospitals and return them."""
-    hospitals = []
-    for h in HOSPITALS:
-        point = text(f"ST_SetSRID(ST_MakePoint({h['lon']}, {h['lat']}), 4326)")
-        hospital = Hospital(
-            name=h["name"],
-            location=point,
-            verified=True,
-        )
-        session.add(hospital)
-        hospitals.append(hospital)
-    session.flush()
-    print(f"Inserted {len(hospitals)} hospitals.")
-    return hospitals
+def clear_db():
+    """Clear all existing data."""
+    with engine.connect() as conn:
+        conn.execute(text("DELETE FROM messages"))
+        conn.execute(text("DELETE FROM blocks"))
+        conn.execute(text("DELETE FROM matches"))
+        conn.execute(text("DELETE FROM requests"))
+        conn.execute(text("DELETE FROM requesters"))
+        conn.commit()
+    print("Cleared existing data")
 
 
 def seed_donors(session: Session, count: int = 100) -> list[Donor]:
-    """Insert synthetic donors spread across NYC."""
+    """Generate synthetic donors around Lahore."""
     donors = []
-    for _ in range(count):
-        name = random_name()
-        lat, lon = random_point_in_city()
-        point = text(f"ST_SetSRID(ST_MakePoint({lon}, {lat}), 4326)")
+    for i in range(count):
+        first = random.choice(FIRST_NAMES_M + FIRST_NAMES_F)
+        last = random.choice(LAST_NAMES)
+        name = f"{first} {last}"
+        email = f"{first.lower()}.{last.lower()}@example.com"
+        blood_type = random.choice(BLOOD_TYPES)
+        phone = f"+92300{random.randint(1000000, 9999999)}" if random.random() > 0.3 else None
 
-        # ~80% available, ~20% unavailable
-        available = random.random() < 0.80
-
-        # Some donors have a recent donation date (medical safety)
-        last_donation = None
-        if random.random() < 0.15:
-            last_donation = date.today() - timedelta(days=random.randint(30, 90))
+        lat = random.uniform(LAHORE_LAT_MIN, LAHORE_LAT_MAX)
+        lng = random.uniform(LAHORE_LNG_MIN, LAHORE_LNG_MAX)
 
         donor = Donor(
             name=name,
-            blood_type=random_blood_type(),
-            email=random_email(name),
-            location=point,
-            available=available,
-            last_donation_date=last_donation,
+            blood_type=blood_type,
+            email=email,
+            phone=phone,
+            location=text(f"ST_SetSRID(ST_MakePoint({lng}, {lat}), 4326)"),
+            available=random.random() > 0.2,
         )
         session.add(donor)
         donors.append(donor)
+
     session.flush()
-    print(f"Inserted {len(donors)} donors ({sum(1 for d in donors if d.available)} available).")
+    print(f"Seeded {len(donors)} donors")
     return donors
 
 
-def seed_requests(session: Session, hospitals: list[Hospital]) -> list[Request]:
-    """Insert a mix of routine, high, and critical shortage requests."""
-    request_specs = [
-        # Critical requests — the drama for the demo
-        {"hosp": 0, "type": "O-",  "units": 4, "urgency": "critical"},
-        {"hosp": 3, "type": "AB-", "units": 2, "urgency": "critical"},
-        {"hosp": 6, "type": "B-",  "units": 3, "urgency": "critical"},
-        # High urgency
-        {"hosp": 1, "type": "O+",  "units": 6, "urgency": "high"},
-        {"hosp": 4, "type": "A+",  "units": 3, "urgency": "high"},
-        {"hosp": 7, "type": "B+",  "units": 2, "urgency": "high"},
-        # Routine
-        {"hosp": 2, "type": "A-",  "units": 5, "urgency": "routine"},
-        {"hosp": 5, "type": "O+",  "units": 4, "urgency": "routine"},
-        {"hosp": 8, "type": "AB+", "units": 2, "urgency": "routine"},
-        {"hosp": 9, "type": "A+",  "units": 3, "urgency": "routine"},
-    ]
+def seed_requesters(session: Session) -> list[Requester]:
+    """Create pre-defined requesters."""
+    requesters = []
+    for spec in REQUESTERS:
+        point = text(f"ST_SetSRID(ST_MakePoint({spec['lng']}, {spec['lat']}), 4326)")
+        requester = Requester(
+            name=spec["name"],
+            email=spec["email"],
+            phone=spec["phone"],
+            location=point,
+        )
+        session.add(requester)
+        requesters.append(requester)
 
-    requests = []
-    for spec in request_specs:
+    session.flush()
+    print(f"Seeded {len(requesters)} requesters")
+    return requesters
+
+
+def seed_requests(session: Session, requesters: list[Requester], donors: list[Donor]):
+    """Create pre-seeded requests with matches at various states."""
+    for spec in REQUESTS:
+        requester = requesters[spec["req_idx"]]
         request = Request(
-            hospital_id=hospitals[spec["hosp"]].hospital_id,
-            blood_type=spec["type"],
+            requester_id=requester.requester_id,
+            blood_type=spec["blood_type"],
             units_needed=spec["units"],
             urgency=spec["urgency"],
-            status="open",
-            # Hospital requests are verified from creation — staff have
-            # confirmed the need is real as part of clinical workflow.
-            verified_by_hospital=True,
+            status=spec["status"],
         )
         session.add(request)
-        requests.append(request)
-    session.flush()
-    print(f"Inserted {len(requests)} requests "
-          f"({sum(1 for r in requests if r.urgency == 'critical')} critical).")
-    return requests
+        session.flush()
+
+        # Create matches based on status
+        compatible_donors = [d for d in donors if d.blood_type in _compatible(spec["blood_type"]) and d.available]
+        random.shuffle(compatible_donors)
+
+        if spec["status"] == "open":
+            # No matches yet
+            pass
+        elif spec["status"] == "donor_accepted":
+            # 1-2 accepted matches
+            for d in compatible_donors[:random.randint(1, 2)]:
+                match = Match(
+                    request_id=request.request_id,
+                    donor_id=d.donor_id,
+                    response="accepted_by_requester",
+                    notified_at=datetime.now(timezone.utc) - timedelta(hours=1),
+                    accepted_at=datetime.now(timezone.utc),
+                )
+                session.add(match)
+        elif spec["status"] == "donor_confirmed":
+            # Donor confirmed
+            for d in compatible_donors[:1]:
+                match = Match(
+                    request_id=request.request_id,
+                    donor_id=d.donor_id,
+                    response="donor_confirmed",
+                    notified_at=datetime.now(timezone.utc) - timedelta(hours=2),
+                    accepted_at=datetime.now(timezone.utc) - timedelta(hours=1),
+                    confirmed_at=datetime.now(timezone.utc),
+                )
+                session.add(match)
+        elif spec["status"] == "contact_shared":
+            # Contact shared
+            for d in compatible_donors[:spec["units"]]:
+                match = Match(
+                    request_id=request.request_id,
+                    donor_id=d.donor_id,
+                    response="contact_shared",
+                    notified_at=datetime.now(timezone.utc) - timedelta(hours=3),
+                    accepted_at=datetime.now(timezone.utc) - timedelta(hours=2),
+                    confirmed_at=datetime.now(timezone.utc) - timedelta(hours=1),
+                    contact_shared_at=datetime.now(timezone.utc),
+                )
+                session.add(match)
+
+    session.commit()
+    print(f"Seeded {len(REQUESTS)} requests with matches")
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Seed VitalLink demo data")
-    parser.add_argument("--clear", action="store_true", help="Clear existing data first")
-    args = parser.parse_args()
+def _compatible(blood_type: str) -> list[str]:
+    """Return compatible donor blood types."""
+    from app.matching_engine import COMPATIBILITY_MAP
+    return COMPATIBILITY_MAP.get(blood_type, [])
 
-    session = SessionLocal()
-    try:
-        if args.clear:
-            clear_db(session)
 
-        hospitals = seed_hospitals(session)
-        donors = seed_donors(session, count=100)
-        requests = seed_requests(session, hospitals)
-
-        session.commit()
-        print("\nSeed complete. Database is ready for the demo.")
-    except Exception:
-        session.rollback()
-        raise
-    finally:
-        session.close()
+def seed():
+    """Run the full seed process."""
+    Base.metadata.create_all(bind=engine)
+    with Session(engine) as session:
+        clear_db()
+        donors = seed_donors(session)
+        requesters = seed_requesters(session)
+        seed_requests(session, requesters, donors)
+    print("Seed complete!")
 
 
 if __name__ == "__main__":
-    main()
+    seed()

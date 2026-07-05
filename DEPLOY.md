@@ -34,23 +34,26 @@ Run in the **SQL Editor** (Supabase dashboard → SQL Editor → New query):
 CREATE EXTENSION IF NOT EXISTS postgis WITH SCHEMA extensions;
 ```
 
-### Run schema migration
+### Run schema migrations
 
-Copy the contents of `backend/migrations/001_initial_schema.sql` and paste into the SQL Editor, then click **Run**.
-
-Or via psql:
+Run all migrations in order (001 through 005) via the SQL Editor, or via psql:
 
 ```bash
 # Get the connection string from: Settings → Database → Connection string → URI (transaction mode)
 psql "postgresql://postgres.PROJECT_REF:YOUR_PASSWORD@aws-0-REGION.pooler.supabase.com:6543/postgres" \
   -f backend/migrations/001_initial_schema.sql
+  -f backend/migrations/002_add_patient_requests.sql
+  -f backend/migrations/003_add_verification.sql
+  -f backend/migrations/004_add_donor_phone.sql
+  -f backend/migrations/005_v2_requester_driven.sql
 ```
 
-### Enable Realtime on the matches table
+### Enable Realtime on the required tables
 
 Supabase dashboard → **Database** → **Replication** → toggle ON for:
 - `public.matches`
 - `public.requests`
+- `public.messages`
 
 ### Get credentials
 
@@ -152,13 +155,11 @@ pip install -r requirements.txt
 python seed_data.py --clear
 ```
 
-The script prints the inserted hospital UUIDs. Copy one and set it in Vercel:
-
-```
-NEXT_PUBLIC_DEMO_HOSPITAL_ID = <paste-hospital-uuid-here>
-```
-
-Then redeploy the Vercel project (or trigger a redeploy from the dashboard).
+The script generates:
+- 100 donors across Lahore, Pakistan
+- 5 requesters with realistic names
+- 10 requests at various lifecycle stages
+- Pre-seeded matches at different response states
 
 ---
 
@@ -177,8 +178,11 @@ curl https://vitallink-api.onrender.com/requests/stats/supply | python -m json.t
 # 4. Open the live dashboard in browser
 open https://vitallink.vercel.app/live
 
-# 5. Open the hospital dashboard
-open https://vitallink.vercel.app/dashboard
+# 5. Open the requester dashboard
+open https://vitallink.vercel.app/request
+
+# 6. Open the donor dashboard
+open https://vitallink.vercel.app/donate/dashboard
 ```
 
 ---
@@ -209,4 +213,3 @@ Per hackathon rules, generate slides via PresentMeApp from the public GitHub rep
 | `NEXT_PUBLIC_API_URL` | Your Render service URL |
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase → Settings → API → URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase → Settings → API → anon key |
-| `NEXT_PUBLIC_DEMO_HOSPITAL_ID` | Output of `seed_data.py` |

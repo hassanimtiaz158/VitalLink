@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import {
   getDonor,
@@ -11,6 +11,7 @@ import {
   type DonorMatchesResponse,
   type DonorMatchEntry,
 } from "@/lib/api";
+import { subscribeToDonorMatches } from "@/lib/supabase";
 import LoadingSpinner from "@/components/LoadingSpinner";
 import ErrorBanner from "@/components/ErrorBanner";
 import { UrgencyBadge } from "@/components/shared";
@@ -31,6 +32,8 @@ export default function DonorDashboardPage() {
   const [toggleError, setToggleError] = useState<string | null>(null);
   const [respondingId, setRespondingId] = useState<string | null>(null);
   const [respondError, setRespondError] = useState<string | null>(null);
+  const [newMatchAlert, setNewMatchAlert] = useState(false);
+  const subRef = useRef<(() => void) | null>(null);
 
   const load = useCallback(async (id: string) => {
     setPhase({ step: "loading" });
@@ -50,6 +53,34 @@ export default function DonorDashboardPage() {
       setPhase({ step: "no-id" });
     }
   }, [load]);
+
+  // Subscribe to live match notifications for this donor
+  useEffect(() => {
+    if (phase.step !== "ready") return;
+    const donorId = phase.donor.donor_id;
+
+    subRef.current = subscribeToDonorMatches(donorId, () => {
+      // New match arrived — refresh matches list and show alert
+      setNewMatchAlert(true);
+      getDonorMatches(donorId).then((updated) => {
+        setPhase((prev) => (prev.step === "ready" ? { ...prev, matches: updated } : prev));
+      }).catch(() => {});
+      // Auto-dismiss alert after 5 seconds
+      setTimeout(() => setNewMatchAlert(false), 5000);
+    });
+
+    // Polling fallback: refresh every 5s even if Supabase Realtime is unavailable
+    const pollId = setInterval(() => {
+      getDonorMatches(donorId).then((updated) => {
+        setPhase((prev) => (prev.step === "ready" ? { ...prev, matches: updated } : prev));
+      }).catch(() => {});
+    }, 5000);
+
+    return () => {
+      subRef.current?.();
+      clearInterval(pollId);
+    };
+  }, [phase.step === "ready" ? phase.donor.donor_id : null]);
 
   async function handleToggleAvailable() {
     if (phase.step !== "ready") return;
@@ -133,6 +164,15 @@ export default function DonorDashboardPage() {
 
   return (
     <div style={wrap}>
+      {/* New match alert */}
+      {newMatchAlert && (
+        <div style={alertBanner}>
+          <span style={{ fontSize: "0.85rem", fontWeight: 600 }}>
+            New blood request — check your pending requests below
+          </span>
+        </div>
+      )}
+
       {/* Welcome */}
       <div style={card}>
         <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
@@ -172,7 +212,7 @@ export default function DonorDashboardPage() {
               {donor.available ? "Available to donate" : "Paused"}
             </h3>
             <p style={{ color: "#5C6D66", fontSize: "0.8rem", margin: "2px 0 0" }}>
-              {donor.available ? "You will receive notifications when hospitals need your blood type." : "Toggle on to start receiving notifications again."}
+              {donor.available ? "You will receive notifications when someone needs your blood type." : "Toggle on to start receiving notifications again."}
             </p>
           </div>
           <button onClick={handleToggleAvailable} disabled={toggling} style={{ ...toggleBtn, backgroundColor: donor.available ? TEAL : "#D1D5DB" }}>
@@ -192,7 +232,7 @@ export default function DonorDashboardPage() {
           <div style={emptyCard}>
             <p style={{ fontWeight: 600, margin: "0 0 0.25rem" }}>No pending requests</p>
             <p style={{ color: "#5C6D66", fontSize: "0.85rem", margin: 0, lineHeight: 1.5 }}>
-              No hospitals near you need {donor.blood_type} right now. We will notify you the moment you are needed.
+              No requests near you need {donor.blood_type} right now. We will notify you the moment you are needed.
             </p>
           </div>
         ) : (
@@ -217,19 +257,28 @@ export default function DonorDashboardPage() {
           </p>
         ) : (
           history.map((m) => (
-            <div key={m.match_id} style={historyRow}>
-              <div style={{ width: 28, height: 28, borderRadius: 6, backgroundColor: m.response === "accepted" ? "#E4F1EE" : "#F3F4F6", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: "0.75rem" }}>
-                {m.response === "accepted" ? "\u2713" : "\u2717"}
-              </div>
-              <div style={{ flex: 1 }}>
-                <span style={{ fontWeight: 600, fontSize: "0.85rem" }}>{m.blood_type}</span>
-                <span style={{ fontSize: "0.75rem", color: "#5C6D66", marginLeft: "0.5rem" }}>
-                  {m.hospital_name ?? "Hospital"} &middot; {m.distance_km ?? "?"} km
+            <div key={m.match_id}>
+              <div style={historyRow}>
+                <div style={{ width: 28, height: 28, borderRadius: 6, backgroundColor: m.response === "accepted" ? "#E4F1EE" : "#F3F4F6", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: "0.75rem" }}>
+                  {m.response === "accepted" ? "\u2713" : "\u2717"}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <span style={{ fontWeight: 600, fontSize: "0.85rem" }}>{m.blood_type}</span>
+                  <span style={{ fontSize: "0.75rem", color: "#5C6D66", marginLeft: "0.5rem" }}>
+                    {m.requester_name ?? "Requester"} &middot; {m.distance_km ?? "?"} km
+                  </span>
+                </div>
+                <span style={{ fontSize: "0.7rem", color: m.response === "accepted" ? TEAL : "#9CA3AF", fontWeight: 600, textTransform: "uppercase" as const }}>
+                  {m.response}
                 </span>
               </div>
-              <span style={{ fontSize: "0.7rem", color: m.response === "accepted" ? TEAL : "#9CA3AF", fontWeight: 600, textTransform: "uppercase" as const }}>
-                {m.response}
-              </span>
+              {m.response === "accepted" && (
+                <div style={acceptedNotice}>
+                  <span style={{ fontSize: "0.8rem", color: "#1B7F79" }}>
+                    The requester has been notified. Check your email for contact details to coordinate your donation.
+                  </span>
+                </div>
+              )}
             </div>
           ))
         )}
@@ -266,7 +315,7 @@ function RequestCard({ match, responding, onRespond }: {
         </span>
       </div>
       <p style={{ fontSize: "0.8rem", color: "#5C6D66", margin: "0 0 0.75rem" }}>
-        <strong>{match.hospital_name ?? "Hospital"}</strong>
+        <strong>{match.requester_name ?? "Requester"}</strong>
         {match.distance_km != null && <> &middot; {match.distance_km} km away</>}
       </p>
       <div style={{ display: "flex", gap: "0.5rem" }}>
@@ -363,6 +412,12 @@ const historyRow: React.CSSProperties = {
   padding: "0.5rem 0", borderBottom: "1px solid #F3F4F6",
 };
 
+const acceptedNotice: React.CSSProperties = {
+  padding: "0.4rem 0.75rem", marginBottom: "0.5rem",
+  backgroundColor: "#E4F1EE", borderRadius: 6,
+  border: "1px solid #B2DFDB",
+};
+
 const primaryBtn: React.CSSProperties = {
   display: "inline-block", padding: "0.7rem 1.5rem", backgroundColor: TEAL, color: "#fff",
   borderRadius: 8, fontWeight: 600, fontSize: "0.9rem", textDecoration: "none",
@@ -377,4 +432,11 @@ const linkBtn: React.CSSProperties = {
 const errorText: React.CSSProperties = {
   color: "#7A0A1D", fontSize: "0.8rem", margin: "0.5rem 0 0",
   backgroundColor: "#FEE2E2", padding: "0.4rem 0.75rem", borderRadius: 6,
+};
+
+const alertBanner: React.CSSProperties = {
+  padding: "0.75rem 1rem", borderRadius: 10,
+  backgroundColor: "#FFF5F5", border: "1px solid #F5D0D0",
+  marginBottom: "0.75rem", textAlign: "center",
+  animation: "pulse-bg 2s ease-in-out infinite",
 };

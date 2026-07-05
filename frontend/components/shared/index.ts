@@ -2,7 +2,7 @@
  * Shared UI components — barrel export.
  *
  * Import from "@/components/shared" to reuse the same visual
- * language across donor, patient, and hospital route groups.
+ * language across donor, patient, and requester route groups.
  *
  * Usage:
  *   import { StatCard, ResponseChip, RoleGuard } from "@/components/shared";

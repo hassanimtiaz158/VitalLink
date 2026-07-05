@@ -1,7 +1,7 @@
 /**
  * StatusBadge — request lifecycle status pill.
  *
- * Used in the hospital dashboard request list and the request dashboard
+ * Used in the requester dashboard request list and the request dashboard
  * component to show open / donors_notified / fulfilled / closed.
  */
 

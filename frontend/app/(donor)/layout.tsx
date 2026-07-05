@@ -3,7 +3,7 @@
  *
  * Wraps the donor registration flow with a teal-accented header
  * and navigation back to the landing page. Nav is donor-only:
- * no patient or hospital links exposed.
+ * no patient or requester links exposed.
  */
 import Link from "next/link";
 

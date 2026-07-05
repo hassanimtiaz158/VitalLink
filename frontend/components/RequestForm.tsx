@@ -1,8 +1,8 @@
 /**
- * RequestForm — Hospital shortage request form.
+ * RequestForm — Blood request form for requesters.
  *
  * Captures blood type, units needed, and urgency level. On submit,
- * posts to POST /requests which triggers the matching engine.
+ * posts to POST /requests which finds candidate donors.
  */
 "use client";
 
@@ -19,11 +19,11 @@ type Status =
   | { state: "error"; message: string };
 
 interface Props {
-  hospitalId: string;
+  requesterId: string;
   onRequestCreated?: (request: RequestResponse) => void;
 }
 
-export default function RequestForm({ hospitalId, onRequestCreated }: Props) {
+export default function RequestForm({ requesterId, onRequestCreated }: Props) {
   const [bloodType, setBloodType] = useState("O-");
   const [unitsNeeded, setUnitsNeeded] = useState(1);
   const [urgency, setUrgency] = useState("critical");
@@ -35,7 +35,7 @@ export default function RequestForm({ hospitalId, onRequestCreated }: Props) {
 
     try {
       const request = await createRequest({
-        hospital_id: hospitalId,
+        requester_id: requesterId,
         blood_type: bloodType,
         units_needed: unitsNeeded,
         urgency,

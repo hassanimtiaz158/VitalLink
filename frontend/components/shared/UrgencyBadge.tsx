@@ -1,7 +1,7 @@
 /**
  * UrgencyBadge — critical / high / routine colour chip.
  *
- * Used in the hospital dashboard request list, donor dashboard
+ * Used in the requester dashboard request list, donor dashboard
  * match cards, and request dashboard.
  */
 

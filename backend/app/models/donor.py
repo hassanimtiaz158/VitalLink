@@ -32,6 +32,7 @@ class Donor(Base):
     # Medical safety: prevents matching donors who recently donated.
     last_donation_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     email: Mapped[str] = mapped_column(Text, nullable=False)
+    phone: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

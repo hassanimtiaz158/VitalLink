@@ -181,7 +181,7 @@ export default function LiveDashboard() {
             <EmptyState
               icon="&#128205;"
               title="No active requests"
-              message="Hospital shortage requests will appear on the map as they are posted."
+              message="Blood requests will appear on the map as they are posted."
             />
           )}
         </div>

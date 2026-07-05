@@ -2,7 +2,7 @@
  * ActivityFeed — Live event feed of recent shortage requests.
  *
  * Displays requests in reverse-chronological order with urgency badges,
- * blood type, hospital name, and match count. Auto-updates via Supabase
+ * blood type, requester name, and match count. Auto-updates via Supabase
  * Realtime subscriptions.
  */
 "use client";
@@ -32,12 +32,12 @@ function timeAgo(dateStr: string): string {
 
 function renderFeedText(r: ActiveRequest): React.ReactNode {
   if (r.status === "fulfilled") {
-    return (<><b>{r.source_name}</b> marked {r.blood_type} request as fulfilled</>);
+    return (<><b>{r.requester_name}</b> marked {r.blood_type} request as fulfilled</>);
   }
   if (r.match_count > 0) {
-    return (<>{r.match_count} donors notified for <b>{r.source_name}</b> {r.blood_type} shortage</>);
+    return (<>{r.match_count} donors notified for <b>{r.requester_name}</b> {r.blood_type} request</>);
   }
-  return (<><b>{r.source_name}</b> posted a {r.urgency} request for {r.blood_type} · {r.units_needed} units</>);
+  return (<><b>{r.requester_name}</b> posted a {r.urgency} request for {r.blood_type} · {r.units_needed} units</>);
 }
 
 export default function ActivityFeed({ requests }: Props) {

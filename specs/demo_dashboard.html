@@ -27,7 +27,6 @@
   }
   .wrap{max-width:1180px; margin:0 auto; padding:32px 28px 64px;}
 
-  /* header */
   header{
     display:flex; align-items:center; justify-content:space-between;
     padding-bottom:20px; border-bottom:1px solid var(--line); margin-bottom:28px;
@@ -52,7 +51,6 @@
   .live-dot{width:7px; height:7px; border-radius:50%; background:var(--teal-600); flex-shrink:0; animation:blink 1.6s infinite;}
   @keyframes blink{0%,100%{opacity:1;} 50%{opacity:0.25;}}
 
-  /* stat grid */
   .section-label{
     font-family:'IBM Plex Mono', monospace; font-size:11.5px; text-transform:uppercase;
     letter-spacing:0.08em; color:var(--muted); margin:0 0 12px;
@@ -77,7 +75,6 @@
   .tag-low{background:var(--amber-50); color:var(--amber-800);}
   .tag-ok{background:var(--teal-50); color:var(--teal-800);}
 
-  /* main grid */
   .main-grid{
     display:grid; grid-template-columns:1.4fr 1fr; gap:20px; margin-bottom:28px;
   }
@@ -90,7 +87,6 @@
   .panel h2{font-size:14.5px; font-weight:600; margin:0 0 3px;}
   .panel .sub{font-size:12px; color:var(--muted); margin:0 0 14px;}
 
-  /* map */
   .map-box{
     position:relative; height:300px; border-radius:8px; overflow:hidden;
     background:
@@ -109,7 +105,6 @@
   .map-legend span{display:inline-flex; align-items:center; gap:6px;}
   .dot{width:8px; height:8px; border-radius:50%;}
 
-  /* feed */
   .feed-list{display:flex; flex-direction:column; gap:0;}
   .feed-item{
     display:flex; gap:10px; padding:10px 0; border-bottom:1px solid var(--line);
@@ -120,7 +115,6 @@
   .feed-text b{font-weight:600;}
   .feed-time{font-family:'IBM Plex Mono', monospace; font-size:11px; color:var(--muted); margin-top:2px;}
 
-  /* queue table */
   table{width:100%; border-collapse:collapse; font-size:13px;}
   th{
     text-align:left; font-weight:500; font-size:11px; color:var(--muted);
@@ -132,6 +126,39 @@
   .badge{font-size:11px; font-weight:500; padding:3px 9px; border-radius:5px; white-space:nowrap;}
   .status-track{width:90px; height:5px; border-radius:3px; background:var(--line); overflow:hidden;}
   .status-fill{height:100%; border-radius:3px; background:var(--teal-600);}
+
+  /* Candidate donor cards */
+  .candidate-list{display:flex; flex-direction:column; gap:8px;}
+  .candidate-card{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:10px 12px; border:1px solid var(--line); border-radius:8px;
+    background:#FAFBFC;
+  }
+  .candidate-info{display:flex; align-items:center; gap:10px;}
+  .candidate-avatar{
+    width:32px; height:32px; border-radius:8px; background:var(--teal-600);
+    color:#fff; display:flex; align-items:center; justify-content:center;
+    font-size:0.8rem; font-weight:700; flex-shrink:0;
+  }
+  .candidate-name{font-weight:600; font-size:0.85rem;}
+  .candidate-meta{font-size:0.75rem; color:var(--muted);}
+  .accept-btn{
+    padding:4px 12px; border:none; border-radius:6px;
+    background:var(--red-600); color:#fff; font-size:0.75rem;
+    font-weight:600; cursor:pointer; white-space:nowrap;
+  }
+  .accept-btn:hover{opacity:0.9;}
+  .status-chip{
+    font-size:0.7rem; font-weight:600; padding:2px 8px; border-radius:4px;
+    text-transform:uppercase; white-space:nowrap;
+  }
+  .chip-pending{background:#F3F4F6; color:#6B7280;}
+  .chip-accepted{background:#FEF3C7; color:#92400e;}
+  .chip-confirmed{background:var(--teal-50); color:var(--teal-800);}
+  .chip-shared{background:var(--teal-50); color:var(--teal-800);}
+
+  .two-col{display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-bottom:28px;}
+  @media(max-width:860px){ .two-col{grid-template-columns:1fr;} }
 </style>
 </head>
 <body>
@@ -171,7 +198,7 @@
   <div class="main-grid">
     <div class="panel">
       <h2>Active requests — map view</h2>
-      <p class="sub">Approximate hospital locations · donor addresses are never shown publicly</p>
+      <p class="sub">Approximate requester locations · donor addresses are never shown publicly</p>
       <div class="map-box" id="map-box"></div>
       <div class="map-legend">
         <span><i class="dot" style="background:var(--red-600)"></i>Critical</span>
@@ -187,15 +214,32 @@
     </div>
   </div>
 
+  <div class="two-col">
+    <!-- Request queue -->
+    <div class="panel">
+      <h2>Request queue</h2>
+      <p class="sub">Fulfillment progress across all open requests</p>
+      <table>
+        <thead>
+          <tr><th>Requester</th><th>Type</th><th>Urgency</th><th>Units</th><th>Progress</th><th>Status</th></tr>
+        </thead>
+        <tbody id="queue-body"></tbody>
+      </table>
+    </div>
+
+    <!-- Candidate donors for a sample request -->
+    <div class="panel">
+      <h2>Candidate donors — O+ request</h2>
+      <p class="sub">Ranked by distance · requester selects whom to accept</p>
+      <div class="candidate-list" id="candidate-list"></div>
+    </div>
+  </div>
+
+  <!-- Match tracking for a sample request -->
   <div class="panel">
-    <h2>Request queue</h2>
-    <p class="sub">Fulfillment progress across all open requests</p>
-    <table>
-      <thead>
-        <tr><th>Hospital</th><th>Type</th><th>Urgency</th><th>Units</th><th>Progress</th><th>Status</th></tr>
-      </thead>
-      <tbody id="queue-body"></tbody>
-    </table>
+    <h2>Match tracking — Ahmed Khan's O- request</h2>
+    <p class="sub">Requester accepted 2 donors · awaiting confirmation</p>
+    <div class="candidate-list" id="match-list"></div>
   </div>
 
 </div>
@@ -243,11 +287,11 @@ pins.forEach(p=>{
 });
 
 const feed = [
-  {level:'critical', text:'<b>City General</b> posted a critical request for O- · 4 units', time:'12s ago'},
-  {level:'ok', text:'Donor <b>M. Alvarez</b> confirmed availability for AB- request', time:'46s ago'},
-  {level:'high', text:'8 donors notified for <b>Riverside Clinic</b> B- shortage', time:'2m ago'},
-  {level:'ok', text:'<b>Northside Hospital</b> marked O+ request as fulfilled', time:'6m ago'},
-  {level:'critical', text:'<b>Eastview Medical</b> posted a critical request for AB- · 2 units', time:'11m ago'},
+  {level:'critical', text:'<b>Ahmed Khan</b> posted a critical request for O- · 2 units', time:'12s ago'},
+  {level:'ok', text:'Donor <b>Naila Wazir</b> confirmed for O- request', time:'46s ago'},
+  {level:'high', text:'Requester <b>Fatima Ali</b> accepted 3 donors for A+ request', time:'2m ago'},
+  {level:'ok', text:'<b>Bilal Malik</b> marked O+ request as fulfilled', time:'6m ago'},
+  {level:'critical', text:'<b>Sana Sheikh</b> posted a critical request for AB- · 2 units', time:'11m ago'},
 ];
 const feedList = document.getElementById('feed-list');
 feed.forEach(f=>{
@@ -264,11 +308,11 @@ feed.forEach(f=>{
 });
 
 const queue = [
-  {hospital:'City General', type:'O-', urgency:'critical', units:'1 / 4', pct:25, status:'Donors notified'},
-  {hospital:'Eastview Medical', type:'AB-', urgency:'critical', units:'0 / 2', pct:0, status:'Open'},
-  {hospital:'Riverside Clinic', type:'B-', urgency:'high', units:'3 / 5', pct:60, status:'Partially fulfilled'},
-  {hospital:'Northside Hospital', type:'O+', urgency:'routine', units:'6 / 6', pct:100, status:'Fulfilled'},
-  {hospital:'Lakeside Health', type:'A+', urgency:'high', units:'2 / 3', pct:66, status:'Partially fulfilled'},
+  {requester:'Ahmed Khan', type:'O-', urgency:'critical', units:'1 / 2', pct:50, status:'Donor confirmed'},
+  {requester:'Fatima Ali', type:'A+', urgency:'high', units:'2 / 3', pct:66, status:'Contact shared'},
+  {requester:'Bilal Malik', type:'O+', urgency:'routine', units:'2 / 2', pct:100, status:'Fulfilled'},
+  {requester:'Sana Sheikh', type:'AB-', urgency:'critical', units:'0 / 2', pct:0, status:'Open'},
+  {requester:'Omar Nawaz', type:'B-', urgency:'high', units:'1 / 1', pct:100, status:'Fulfilled'},
 ];
 const urgencyBadge = {
   critical:'background:var(--red-50); color:var(--red-800);',
@@ -279,7 +323,7 @@ const queueBody = document.getElementById('queue-body');
 queue.forEach(q=>{
   const tr = document.createElement('tr');
   tr.innerHTML = `
-    <td>${q.hospital}</td>
+    <td>${q.requester}</td>
     <td style="font-family:'IBM Plex Mono', monospace;">${q.type}</td>
     <td><span class="badge" style="${urgencyBadge[q.urgency]}">${q.urgency}</span></td>
     <td>${q.units}</td>
@@ -287,6 +331,60 @@ queue.forEach(q=>{
     <td style="color:var(--muted); font-size:12.5px;">${q.status}</td>
   `;
   queueBody.appendChild(tr);
+});
+
+// Candidate donors for a sample O+ request
+const candidates = [
+  {name:'Test Donor Phone', blood:'O+', dist:'0.0 km', lastDonated:'Never', initials:'T'},
+  {name:'Naila Wazir', blood:'O+', dist:'1.2 km', lastDonated:'2026-03-15', initials:'N'},
+  {name:'Hassan Ali', blood:'O+', dist:'2.8 km', lastDonated:'Never', initials:'H'},
+  {name:'Ayesha Siddiqui', blood:'O+', dist:'3.5 km', lastDonated:'2025-12-20', initials:'A'},
+  {name:'Bilal Ahmed', blood:'O+', dist:'4.1 km', lastDonated:'Never', initials:'B'},
+];
+const candidateList = document.getElementById('candidate-list');
+candidates.forEach(c=>{
+  const card = document.createElement('div');
+  card.className = 'candidate-card';
+  card.innerHTML = `
+    <div class="candidate-info">
+      <div class="candidate-avatar">${c.initials}</div>
+      <div>
+        <div class="candidate-name">${c.name}</div>
+        <div class="candidate-meta">${c.blood} · ${c.dist} · Last donated: ${c.lastDonated}</div>
+      </div>
+    </div>
+    <button class="accept-btn">Accept</button>
+  `;
+  candidateList.appendChild(card);
+});
+
+// Match tracking for a sample request
+const matches = [
+  {name:'Test Donor Phone', blood:'O-', dist:'0.0 km', response:'donor_confirmed', email:'testphone@test.com', phone:'+923001234567', initials:'T'},
+  {name:'Naila Wazir', blood:'O-', dist:'1.8 km', response:'accepted_by_requester', email:null, phone:null, initials:'N'},
+  {name:'Hassan Ali', blood:'O-', dist:'3.2 km', response:'pending', email:null, phone:null, initials:'H'},
+];
+const matchList = document.getElementById('match-list');
+matches.forEach(m=>{
+  const card = document.createElement('div');
+  card.className = 'candidate-card';
+  const chipClass = m.response === 'donor_confirmed' ? 'chip-confirmed' :
+                    m.response === 'accepted_by_requester' ? 'chip-accepted' : 'chip-pending';
+  const chipLabel = m.response.replace(/_/g, ' ');
+  const showContact = m.response === 'donor_confirmed' || m.response === 'contact_shared';
+  card.innerHTML = `
+    <div class="candidate-info">
+      <div class="candidate-avatar" style="background:${showContact ? 'var(--teal-600)' : '#F59E0B'}">${m.initials}</div>
+      <div>
+        <div class="candidate-name">${m.name}</div>
+        <div class="candidate-meta">${m.blood} · ${m.dist}</div>
+        ${showContact && m.email ? `<div class="candidate-meta" style="color:var(--teal-600); margin-top:2px;">${m.email} · ${m.phone}</div>` : ''}
+        ${m.response === 'accepted_by_requester' ? `<div class="candidate-meta" style="color:#F59E0B; margin-top:2px;">Waiting for donor to confirm...</div>` : ''}
+      </div>
+    </div>
+    <span class="status-chip ${chipClass}">${chipLabel}</span>
+  `;
+  matchList.appendChild(card);
 });
 </script>
 
