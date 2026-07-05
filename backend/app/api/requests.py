@@ -1,10 +1,11 @@
 """Shortage request endpoints — the core of the matching workflow.
 
-POST /requests          — Submit a shortage request (hospital or patient) and auto-match donors.
-POST /requests/{id}/verify — Verify a patient request with the short code from hospital staff.
-GET  /requests/active   — Public feed of verified open requests for the live dashboard.
-GET  /requests/{id}/matches — Request detail with its matched donors.
-GET  /requests/stats/supply — Aggregated donor supply levels per blood type.
+POST   /requests              — Submit a shortage request (hospital or patient) and auto-match donors.
+POST   /requests/{id}/verify  — Verify a patient request with the short code from hospital staff.
+PATCH  /requests/{id}/status  — Update request status (fulfilled, closed, etc.) and adjust donor availability.
+GET    /requests/active       — Public feed of verified open requests for the live dashboard.
+GET    /requests/{id}/matches — Request detail with its matched donors.
+GET    /requests/stats/supply — Aggregated donor supply levels per blood type.
 """
 import secrets
 import uuid
@@ -21,6 +22,8 @@ from app.models.donor import Donor
 from app.models.request import Request
 from app.models.match import Match
 from app.matching_engine import find_matches
+from pydantic import BaseModel
+
 from app.api.schemas import (
     RequestCreate,
     RequestResponse,
@@ -28,6 +31,10 @@ from app.api.schemas import (
     PatientResponse,
     VerifyRequest,
 )
+
+
+class UpdateRequestStatus(BaseModel):
+    status: str  # "fulfilled" or "closed"
 
 router = APIRouter(prefix="/requests", tags=["requests"])
 
@@ -210,6 +217,63 @@ def verify_request(
         "request_id": str(request.request_id),
         "verified": True,
         "matched_donors": len(donors),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Update request status (fulfilled / closed)
+# ---------------------------------------------------------------------------
+@router.patch("/{request_id}/status")
+def update_request_status(
+    request_id: uuid.UUID,
+    payload: UpdateRequestStatus,
+    db: Session = Depends(get_db),
+):
+    """Update a request's status and adjust donor availability.
+
+    When a request is marked 'fulfilled', donors who accepted are made
+    unavailable for 56 days (standard donation interval). When closed,
+    no availability changes are made — the request simply drops out of
+    the active feed.
+    """
+    VALID = {"fulfilled", "closed"}
+    if payload.status not in VALID:
+        raise HTTPException(status_code=400, detail=f"Status must be one of: {', '.join(VALID)}")
+
+    request = db.get(Request, request_id)
+    if not request:
+        raise HTTPException(status_code=404, detail="Request not found")
+
+    request.status = payload.status
+
+    if payload.status == "fulfilled":
+        # Make accepted donors unavailable (56-day cooldown)
+        accepted_donors = (
+            db.execute(
+                select(Donor.donor_id)
+                .join(Match, Match.donor_id == Donor.donor_id)
+                .where(
+                    Match.request_id == request_id,
+                    Match.response == "accepted",
+                )
+            )
+            .scalars()
+            .all()
+        )
+        from datetime import datetime, timedelta
+        cooldown_until = datetime.utcnow() + timedelta(days=56)
+        for donor_id in accepted_donors:
+            donor = db.get(Donor, donor_id)
+            if donor:
+                donor.available = False
+                donor.last_donation_date = datetime.utcnow().date()
+
+    db.commit()
+    db.refresh(request)
+
+    return {
+        "request_id": str(request.request_id),
+        "status": request.status,
     }
 
 

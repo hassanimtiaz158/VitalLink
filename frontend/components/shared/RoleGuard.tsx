@@ -36,7 +36,9 @@ export default function RoleGuard({ storage, key, redirectTo, envFallback, child
   useEffect(() => {
     const store = storage === "localStorage" ? localStorage : sessionStorage;
     const value = store.getItem(key);
-    if (value || envFallback) {
+    if (value && value.trim()) {
+      setAllowed(true);
+    } else if (envFallback) {
       setAllowed(true);
     } else {
       router.replace(redirectTo);

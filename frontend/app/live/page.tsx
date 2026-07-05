@@ -12,8 +12,10 @@ import { useEffect, useState, useCallback } from "react";
 import {
   getActiveRequestsFeed,
   getSupplyStats,
+  listDonors,
   type ActiveRequest,
   type SupplyStat,
+  type DonorResponse,
 } from "@/lib/api";
 import { subscribeToNewRequests } from "@/lib/supabase";
 import SupplyCards from "@/components/SupplyCards";
@@ -27,7 +29,7 @@ import EmptyState from "@/components/EmptyState";
 type LoadState =
   | { phase: "loading" }
   | { phase: "error"; message: string }
-  | { phase: "ready"; requests: ActiveRequest[]; stats: SupplyStat[] };
+  | { phase: "ready"; requests: ActiveRequest[]; stats: SupplyStat[]; donors: DonorResponse[] };
 
 export default function LiveDashboard() {
   const [state, setState] = useState<LoadState>({ phase: "loading" });
@@ -35,7 +37,14 @@ export default function LiveDashboard() {
   const fetchData = useCallback(async () => {
     try {
       const [reqs, s] = await Promise.all([getActiveRequestsFeed(), getSupplyStats()]);
-      setState({ phase: "ready", requests: reqs, stats: s });
+      // Fetch donors separately — don't block the map if this is slow
+      let d: DonorResponse[] = [];
+      try {
+        d = await listDonors();
+      } catch {
+        // Donors failed to load — map still works with requests only
+      }
+      setState({ phase: "ready", requests: reqs, stats: s, donors: d });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to load dashboard data";
       setState({ phase: "error", message: msg });
@@ -115,7 +124,7 @@ export default function LiveDashboard() {
   }
 
   // --- Ready state ---
-  const { requests, stats } = state;
+  const { requests, stats, donors } = state;
   const criticalCount = requests.filter((r) => r.urgency === "critical").length;
 
   return (
@@ -166,8 +175,8 @@ export default function LiveDashboard() {
               <p style={panelSub}>Auto-centers on your location &middot; donor addresses are never shown</p>
             </div>
           </div>
-          {requests.length > 0 ? (
-            <LiveMap requests={requests} />
+          {requests.length > 0 || donors.length > 0 ? (
+            <LiveMap requests={requests} donors={donors} />
           ) : (
             <EmptyState
               icon="&#128205;"

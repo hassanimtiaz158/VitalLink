@@ -3,12 +3,23 @@
  *
  * URL: /donate
  * Shows how the donor flow works, then links to register or dashboard.
+ * "View my dashboard" checks localStorage first — routes to register if no ID.
  */
+"use client";
+
 import Link from "next/link";
+import { useState, useEffect } from "react";
 
 const TEAL = "#1B7F79";
 
 export default function DonateLandingPage() {
+  const [hasId, setHasId] = useState(false);
+
+  useEffect(() => {
+    const id = localStorage.getItem("vitallink_donor_id");
+    setHasId(!!id && id.trim().length > 0);
+  }, []);
+
   return (
     <div>
       {/* Hero */}
@@ -55,9 +66,14 @@ export default function DonateLandingPage() {
         <Link href="/donate/register" style={{ ...ctaBtn, backgroundColor: TEAL }}>
           Register as a donor
         </Link>
-        <Link href="/donate/dashboard" style={secondaryBtn}>
+        <Link href={hasId ? "/donate/dashboard" : "/donate/register"} style={secondaryBtn}>
           View my dashboard
         </Link>
+        <p style={{ fontSize: "0.75rem", color: "#9CA3AF", textAlign: "center", margin: "0.25rem 0 0" }}>
+          {hasId
+            ? "You are registered — your dashboard shows match requests and impact."
+            : "Not registered yet? You will be taken to registration."}
+        </p>
       </section>
     </div>
   );

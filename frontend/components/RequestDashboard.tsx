@@ -12,6 +12,7 @@ import { useEffect, useState } from "react";
 import {
   getRequestMatches,
   verifyRequest,
+  updateRequestStatus,
   type RequestWithMatches,
   type MatchDetail,
 } from "@/lib/api";
@@ -28,6 +29,7 @@ export default function RequestDashboard({ requestId, onBack }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [verifyLoading, setVerifyLoading] = useState(false);
   const [verifyError, setVerifyError] = useState<string | null>(null);
+  const [fulfillLoading, setFulfillLoading] = useState(false);
 
   // Initial fetch
   useEffect(() => {
@@ -77,6 +79,16 @@ export default function RequestDashboard({ requestId, onBack }: Props) {
     } finally {
       setVerifyLoading(false);
     }
+  }
+
+  async function handleMarkFulfilled() {
+    setFulfillLoading(true);
+    try {
+      await updateRequestStatus(requestId, "fulfilled");
+      const updated = await getRequestMatches(requestId);
+      setData(updated);
+    } catch { /* retry on next load */ }
+    setFulfillLoading(false);
   }
 
   if (error) return <div style={cardStyle}><p style={{ color: "#dc2626" }}>{error}</p></div>;
@@ -145,6 +157,33 @@ export default function RequestDashboard({ requestId, onBack }: Props) {
       <p style={{ margin: "0.5rem 0 0", fontSize: "0.8rem", color: "#6b7280" }}>
         {accepted}/{data.units_needed} accepted
       </p>
+
+      {/* Fulfill action — show when enough donors accepted and not already done */}
+      {accepted >= data.units_needed && data.status !== "fulfilled" && data.status !== "closed" && (
+        <div style={{ margin: "1rem 0 0" }}>
+          <button
+            onClick={handleMarkFulfilled}
+            disabled={fulfillLoading}
+            style={{
+              width: "100%",
+              padding: "0.65rem",
+              border: "none",
+              borderRadius: 8,
+              backgroundColor: "#16a34a",
+              color: "#fff",
+              fontSize: "0.9rem",
+              fontWeight: 600,
+              cursor: fulfillLoading ? "default" : "pointer",
+              opacity: fulfillLoading ? 0.6 : 1,
+            }}
+          >
+            {fulfillLoading ? "Marking\u2026" : "Mark as Fulfilled"}
+          </button>
+          <p style={{ margin: "0.4rem 0 0", fontSize: "0.75rem", color: "#6b7280", textAlign: "center" }}>
+            {accepted} donor{accepted !== 1 ? "s" : ""} accepted — enough to fulfill this request
+          </p>
+        </div>
+      )}
 
       {/* Donor list */}
       {data.matches.length > 0 && (

@@ -6,7 +6,23 @@
  */
 import { fetchWithTimeout } from "./fetch-with-timeout";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "/api";
+
+function extractError(body: unknown, fallback: string): string {
+  if (!body || typeof body !== "object") return fallback;
+  const detail = (body as Record<string, unknown>).detail;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    return detail
+      .map((e: any) => {
+        if (typeof e === "string") return e;
+        if (e?.msg) return e.msg;
+        return JSON.stringify(e);
+      })
+      .join("; ");
+  }
+  return fallback;
+}
 
 // ---------------------------------------------------------------------------
 // Donor types
@@ -41,7 +57,7 @@ export async function registerDonor(data: DonorCreate): Promise<DonorResponse> {
   });
   if (!res.ok) {
     const body = await res.json().catch(() => null);
-    throw new Error(body?.detail ?? `Registration failed (${res.status})`);
+    throw new Error(extractError(body, `Registration failed (${res.status})`));
   }
   return res.json();
 }
@@ -49,6 +65,12 @@ export async function registerDonor(data: DonorCreate): Promise<DonorResponse> {
 export async function getDonor(donorId: string): Promise<DonorResponse> {
   const res = await fetchWithTimeout(`${API_BASE}/donors/${donorId}`);
   if (!res.ok) throw new Error(`Donor not found (${res.status})`);
+  return res.json();
+}
+
+export async function listDonors(): Promise<DonorResponse[]> {
+  const res = await fetchWithTimeout(`${API_BASE}/donors`, { timeoutMs: 15000 });
+  if (!res.ok) throw new Error(`Failed to fetch donors (${res.status})`);
   return res.json();
 }
 
@@ -118,7 +140,7 @@ export async function respondToMatch(
   );
   if (!res.ok) {
     const body = await res.json().catch(() => null);
-    throw new Error(body?.detail ?? `Failed to respond (${res.status})`);
+    throw new Error(extractError(body, `Failed to respond (${res.status})`));
   }
   return res.json();
 }
@@ -149,7 +171,7 @@ export async function registerHospital(data: HospitalCreate): Promise<HospitalRe
   });
   if (!res.ok) {
     const body = await res.json().catch(() => null);
-    throw new Error(body?.detail ?? `Hospital registration failed (${res.status})`);
+    throw new Error(extractError(body, `Hospital registration failed (${res.status})`));
   }
   return res.json();
 }
@@ -183,7 +205,7 @@ export async function registerPatient(data: PatientCreate): Promise<PatientRespo
   });
   if (!res.ok) {
     const body = await res.json().catch(() => null);
-    throw new Error(body?.detail ?? `Patient registration failed (${res.status})`);
+    throw new Error(extractError(body, `Patient registration failed (${res.status})`));
   }
   return res.json();
 }
@@ -222,13 +244,7 @@ export async function createRequest(data: RequestCreate): Promise<RequestRespons
   });
   if (!res.ok) {
     const body = await res.json().catch(() => null);
-    const detail = body?.detail;
-    const msg = Array.isArray(detail)
-      ? detail.map((e: any) => e.msg ?? e).join("; ")
-      : typeof detail === "string"
-        ? detail
-        : `Request failed (${res.status})`;
-    throw new Error(msg);
+    throw new Error(extractError(body, `Request failed (${res.status})`));
   }
   return res.json();
 }
@@ -244,11 +260,7 @@ export async function verifyRequest(
   });
   if (!res.ok) {
     const body = await res.json().catch(() => null);
-    const detail = body?.detail;
-    const msg = typeof detail === "string"
-      ? detail
-      : `Verification failed (${res.status})`;
-    throw new Error(msg);
+    throw new Error(extractError(body, `Verification failed (${res.status})`));
   }
   return res.json();
 }
@@ -276,7 +288,7 @@ export async function getRequestMatches(requestId: string): Promise<RequestWithM
   const res = await fetchWithTimeout(`${API_BASE}/requests/${requestId}/matches`);
   if (!res.ok) {
     const body = await res.json().catch(() => null);
-    throw new Error(body?.detail ?? `Failed to fetch matches (${res.status})`);
+    throw new Error(extractError(body, `Failed to fetch matches (${res.status})`));
   }
   return res.json();
 }
@@ -317,5 +329,27 @@ export async function getActiveRequestsFeed(): Promise<ActiveRequest[]> {
 export async function getSupplyStats(): Promise<SupplyStat[]> {
   const res = await fetchWithTimeout(`${API_BASE}/requests/stats/supply`);
   if (!res.ok) throw new Error(`Failed to fetch supply stats (${res.status})`);
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Request status update
+// ---------------------------------------------------------------------------
+export async function updateRequestStatus(
+  requestId: string,
+  status: "fulfilled" | "closed",
+): Promise<{ request_id: string; status: string }> {
+  const res = await fetchWithTimeout(
+    `${API_BASE}/requests/${requestId}/status`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    },
+  );
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(extractError(body, `Failed to update status (${res.status})`));
+  }
   return res.json();
 }

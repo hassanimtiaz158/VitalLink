@@ -22,6 +22,44 @@ from app.api.schemas import DonorCreate, DonorResponse, AvailabilityUpdate
 router = APIRouter(prefix="/donors", tags=["donors"])
 
 
+@router.get("", response_model=list[DonorResponse])
+def list_donors(db: Session = Depends(get_db)):
+    """List all donors with locations for the live map.
+
+    Returns donor coordinates, blood type, and availability — enough
+    for the map to plot markers. Uses a single query with ST_Y/ST_X
+    to avoid N+1 performance issues.
+    """
+    rows = db.execute(
+        select(
+            Donor.donor_id,
+            Donor.name,
+            Donor.blood_type,
+            Donor.email,
+            func.ST_Y(cast(Donor.location, Geometry)).label("latitude"),
+            func.ST_X(cast(Donor.location, Geometry)).label("longitude"),
+            Donor.available,
+            Donor.last_donation_date,
+            Donor.created_at,
+        )
+    ).all()
+
+    return [
+        DonorResponse(
+            donor_id=r.donor_id,
+            name=r.name,
+            blood_type=r.blood_type,
+            email=r.email,
+            latitude=r.latitude,
+            longitude=r.longitude,
+            available=r.available,
+            last_donation_date=r.last_donation_date,
+            created_at=r.created_at,
+        )
+        for r in rows
+    ]
+
+
 def _donor_to_response(donor: Donor, db: Session) -> DonorResponse:
     """Convert a Donor ORM object to a DonorResponse, extracting lat/lng
     from the PostGIS GEOGRAPHY column via ST_Y / ST_X."""

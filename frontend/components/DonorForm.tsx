@@ -6,8 +6,8 @@
  */
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
-import Link from "next/link";
+import { FormEvent, useState } from "react";
+import { useRouter } from "next/navigation";
 import { getCurrentPosition, geoErrorMessage, type GeoError } from "@/lib/geolocation";
 import { geocodeAddress } from "@/lib/geocode";
 import { registerDonor, type DonorResponse } from "@/lib/api";
@@ -83,7 +83,7 @@ export default function DonorForm() {
       return;
     }
 
-    setStatus({ state: "submitting" });
+      setStatus({ state: "submitting" });
 
     try {
       const donor = await registerDonor({
@@ -94,6 +94,8 @@ export default function DonorForm() {
         longitude: lng!,
         available,
       });
+      // Set localStorage immediately so dashboard guard can find it
+      localStorage.setItem("vitallink_donor_id", donor.donor_id);
       setStatus({ state: "success", donor });
     } catch (err: any) {
       setStatus({ state: "error", message: err.message ?? "Registration failed" });
@@ -236,11 +238,12 @@ export default function DonorForm() {
 // ---------------------------------------------------------------------------
 
 function SuccessCard({ donor }: { donor: DonorResponse }) {
-  const [reset, setReset] = useState<(() => void) | null>(null);
+  const router = useRouter();
 
-  useEffect(() => {
+  function goToDashboard() {
     localStorage.setItem("vitallink_donor_id", donor.donor_id);
-  }, [donor.donor_id]);
+    router.push("/donate/dashboard");
+  }
 
   return (
     <>
@@ -254,9 +257,9 @@ function SuccessCard({ donor }: { donor: DonorResponse }) {
         </p>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-        <Link href="/donate/dashboard" style={btnPrimary}>
+        <button onClick={goToDashboard} style={btnPrimary}>
           View your dashboard
-        </Link>
+        </button>
       </div>
     </>
   );

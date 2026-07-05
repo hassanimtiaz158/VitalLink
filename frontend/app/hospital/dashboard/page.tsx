@@ -15,6 +15,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { getActiveRequestsFeed, type ActiveRequest } from "@/lib/api";
+import { subscribeToNewRequests } from "@/lib/supabase";
 import RequestDashboard from "@/components/RequestDashboard";
 import LoadingSpinner from "@/components/LoadingSpinner";
 import ErrorBanner from "@/components/ErrorBanner";
@@ -46,6 +47,16 @@ function DashboardInner() {
       .then(setActiveRequests)
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
+  }, []);
+
+  // Live-update: refetch when a new request appears via Supabase Realtime
+  useEffect(() => {
+    const unsub = subscribeToNewRequests(() => {
+      getActiveRequestsFeed()
+        .then(setActiveRequests)
+        .catch(() => {});
+    });
+    return unsub;
   }, []);
 
   if (selectedRequest) {

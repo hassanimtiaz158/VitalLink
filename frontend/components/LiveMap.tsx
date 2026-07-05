@@ -1,22 +1,21 @@
 /**
- * LiveMap — Interactive Leaflet.js map showing hospital request locations.
+ * LiveMap — Interactive Leaflet.js map showing donors and hospital requests.
  *
- * Features:
- * - Auto-centers on the user's detected location via browser geolocation
- * - Falls back to a sensible default if geolocation is unavailable
- * - Markers coloured by urgency (red=critical, amber=high, teal=routine)
- * - Pulsing animation on critical request markers
- * - Shows detected location name (reverse-geocoded via Nominatim)
- * - Dark-themed CartoDB tiles for a modern look
- * - Responsive sizing
+ * - Request markers: urgency-coloured (red=critical, amber=high, teal=routine)
+ *   with pulsing animation for critical requests.
+ * - Donor markers: small blue dots showing available donors nearby.
+ * - Auto-centers on user's detected location via browser geolocation.
+ * - Falls back to Lahore center if geolocation is unavailable.
+ * - Dark-themed CartoDB tiles for a modern look.
  */
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { ActiveRequest } from "@/lib/api";
+import type { ActiveRequest, DonorResponse } from "@/lib/api";
 
 interface Props {
   requests: ActiveRequest[];
+  donors: DonorResponse[];
 }
 
 const urgencyColor: Record<string, string> = {
@@ -31,24 +30,27 @@ const urgencyLabel: Record<string, string> = {
   routine: "Routine",
 };
 
-// Default center — NYC (used if geolocation fails)
-const DEFAULT_CENTER: [number, number] = [40.7128, -74.006];
+const DEFAULT_CENTER: [number, number] = [31.5204, 74.3587];
 const DEFAULT_ZOOM = 12;
 
-export default function LiveMap({ requests }: Props) {
+export default function LiveMap({ requests, donors }: Props) {
   const mapRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const mapInstance = useRef<any>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const markersLayer = useRef<any>(null);
+  const requestLayer = useRef<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const donorLayer = useRef<any>(null);
+  const initLock = useRef(false);
   const [locationName, setLocationName] = useState<string | null>(null);
-  const [userPos, setUserPos] = useState<[number, number] | null>(null);
 
-  // Initialize map + detect user location
+  // Initialize map
   useEffect(() => {
-    if (!mapRef.current || mapInstance.current) return;
+    if (!mapRef.current || mapInstance.current || initLock.current) return;
+    initLock.current = true;
 
     import("leaflet").then((L) => {
+      if (mapInstance.current) return;
       const map = L.map(mapRef.current!, {
         center: DEFAULT_CENTER,
         zoom: DEFAULT_ZOOM,
@@ -56,7 +58,6 @@ export default function LiveMap({ requests }: Props) {
         attributionControl: false,
       });
 
-      // Dark-themed CartoDB tiles — cleaner and more modern
       L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
         maxZoom: 19,
         subdomains: "abcd",
@@ -64,26 +65,22 @@ export default function LiveMap({ requests }: Props) {
 
       L.control.zoom({ position: "bottomright" }).addTo(map);
 
-      // Attribution in bottom-left
       L.control.attribution({ position: "bottomleft", prefix: false })
         .addAttribution("&copy; <a href='https://carto.com/'>CARTO</a> &copy; <a href='https://osm.org/copyright'>OSM</a>")
         .addTo(map);
 
-      // Create a layer group for markers
-      markersLayer.current = L.layerGroup().addTo(map);
-
+      requestLayer.current = L.layerGroup().addTo(map);
+      donorLayer.current = L.layerGroup().addTo(map);
       mapInstance.current = map;
 
-      // Try to detect user location
+      // Detect user location to center the map
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
           (pos) => {
             const lat = pos.coords.latitude;
             const lng = pos.coords.longitude;
-            setUserPos([lat, lng]);
-            map.setView([lat, lng], 13);
+            map.setView([lat, lng], 12);
 
-            // Reverse geocode to get location name
             fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&zoom=10`)
               .then((r) => r.json())
               .then((data) => {
@@ -94,25 +91,8 @@ export default function LiveMap({ requests }: Props) {
                 }
               })
               .catch(() => {});
-
-            // Add user location marker
-            const userIcon = L.divIcon({
-              className: "",
-              html: `<div style="
-                width:16px; height:16px; border-radius:50%;
-                background:#3B82F6; border:3px solid #fff;
-                box-shadow:0 0 0 3px rgba(59,130,246,0.3), 0 2px 6px rgba(0,0,0,0.25);
-              "></div>`,
-              iconSize: [16, 16],
-              iconAnchor: [8, 8],
-            });
-            L.marker([lat, lng], { icon: userIcon })
-              .addTo(map)
-              .bindPopup("<strong>You are here</strong>");
           },
-          () => {
-            // Geolocation failed — use default NYC center
-          },
+          () => {},
           { timeout: 8000, enableHighAccuracy: false, maximumAge: 120000 },
         );
       }
@@ -126,12 +106,12 @@ export default function LiveMap({ requests }: Props) {
     };
   }, []);
 
-  // Update markers when requests change
+  // Update request markers
   useEffect(() => {
-    if (!mapInstance.current || !markersLayer.current) return;
+    if (!mapInstance.current || !requestLayer.current) return;
 
     import("leaflet").then((L) => {
-      const layer = markersLayer.current;
+      const layer = requestLayer.current;
       layer.clearLayers();
 
       requests.forEach((r) => {
@@ -142,7 +122,7 @@ export default function LiveMap({ requests }: Props) {
           className: "",
           html: `
             <div style="position:relative;width:28px;height:28px;">
-              ${isCritical ? `<div class="pulse-ring" style="
+              ${isCritical ? `<div style="
                 position:absolute;inset:-6px;border-radius:50%;
                 border:2px solid ${color};opacity:0.6;
                 animation:pulse 2s ease-out infinite;
@@ -184,19 +164,67 @@ export default function LiveMap({ requests }: Props) {
           .addTo(layer)
           .bindPopup(popupHtml);
       });
+    });
+  }, [requests]);
 
-      // Fit bounds to show all markers, but don't zoom past the user's area
-      if (requests.length > 0) {
-        const bounds = L.latLngBounds(
-          requests.map((r) => [r.latitude, r.longitude] as [number, number]),
-        );
-        if (userPos) {
-          bounds.extend(userPos);
-        }
-        mapInstance.current.fitBounds(bounds, { padding: [50, 50], maxZoom: 14 });
+  // Update donor markers
+  useEffect(() => {
+    if (!mapInstance.current || !donorLayer.current) return;
+
+    import("leaflet").then((L) => {
+      const layer = donorLayer.current;
+      layer.clearLayers();
+
+      donors.forEach((d) => {
+        if (!d.available) return;
+
+        const icon = L.divIcon({
+          className: "",
+          html: `
+            <div style="
+              width:10px;height:10px;border-radius:50%;
+              background:#3B82F6; border:1.5px solid #fff;
+              box-shadow:0 1px 4px rgba(0,0,0,0.2);
+              opacity:0.8;
+            "></div>
+          `,
+          iconSize: [10, 10],
+          iconAnchor: [5, 5],
+        });
+
+        const popupHtml = `
+          <div style="font-family:'IBM Plex Sans',system-ui,sans-serif;min-width:120px;">
+            <div style="font-weight:600;font-size:13px;">${d.name}</div>
+            <div style="font-size:12px;color:#6b7280;margin-top:2px;">
+              ${d.blood_type} &middot; Available
+            </div>
+          </div>
+        `;
+
+        L.marker([d.latitude, d.longitude], { icon })
+          .addTo(layer)
+          .bindPopup(popupHtml);
+      });
+    });
+  }, [donors]);
+
+  // Fit bounds to all markers
+  useEffect(() => {
+    if (!mapInstance.current) return;
+    if (requests.length === 0 && donors.length === 0) return;
+
+    import("leaflet").then((L) => {
+      const points: [number, number][] = [];
+      requests.forEach((r) => points.push([r.latitude, r.longitude]));
+      donors.forEach((d) => {
+        if (d.available) points.push([d.latitude, d.longitude]);
+      });
+      if (points.length > 0) {
+        const bounds = L.latLngBounds(points);
+        mapInstance.current.fitBounds(bounds, { padding: [50, 50], maxZoom: 13 });
       }
     });
-  }, [requests, userPos]);
+  }, [requests, donors]);
 
   return (
     <div style={wrapper}>
@@ -221,11 +249,9 @@ export default function LiveMap({ requests }: Props) {
         <span style={legendItem}>
           <span style={{ ...dot, backgroundColor: "#1B7F79" }} /> Routine
         </span>
-        {userPos && (
-          <span style={legendItem}>
-            <span style={{ ...dot, backgroundColor: "#3B82F6" }} /> You
-          </span>
-        )}
+        <span style={legendItem}>
+          <span style={{ ...dot, backgroundColor: "#3B82F6" }} /> Donor
+        </span>
       </div>
       {/* Pulse animation */}
       <style>{`
