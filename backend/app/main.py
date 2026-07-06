@@ -53,6 +53,7 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",
         "https://vitallink.vercel.app",
+        "https://vital-link-pied.vercel.app",
     ],
     allow_credentials=True,
     allow_methods=["*"],
