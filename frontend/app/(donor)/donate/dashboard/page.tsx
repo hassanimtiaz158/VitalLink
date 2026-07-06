@@ -14,6 +14,7 @@ import {
 import { subscribeToDonorMatches } from "@/lib/supabase";
 import LoadingSpinner from "@/components/LoadingSpinner";
 import ErrorBanner from "@/components/ErrorBanner";
+import ChatModal from "@/components/ChatModal";
 import { UrgencyBadge } from "@/components/shared";
 
 const TEAL = "#1B7F79";
@@ -33,7 +34,9 @@ export default function DonorDashboardPage() {
   const [respondingId, setRespondingId] = useState<string | null>(null);
   const [respondError, setRespondError] = useState<string | null>(null);
   const [newMatchAlert, setNewMatchAlert] = useState(false);
+  const [chatMatchId, setChatMatchId] = useState<string | null>(null);
   const subRef = useRef<(() => void) | null>(null);
+  const seenMessages = useRef<Map<string, number>>(new Map());
 
   const load = useCallback(async (id: string) => {
     setPhase({ step: "loading" });
@@ -271,6 +274,20 @@ export default function DonorDashboardPage() {
                 <span style={{ fontSize: "0.7rem", color: m.response === "accepted" ? TEAL : "#9CA3AF", fontWeight: 600, textTransform: "uppercase" as const }}>
                   {m.response}
                 </span>
+                {m.response === "contact_shared" && (
+                  <button
+                    onClick={() => {
+                      seenMessages.current.set(m.match_id, m.message_count);
+                      setChatMatchId(m.match_id);
+                    }}
+                    style={{ ...chatBtn, position: "relative" }}
+                  >
+                    Chat
+                    {(m.message_count - (seenMessages.current.get(m.match_id) ?? 0)) > 0 && (
+                      <span style={chatBadge}>{m.message_count - (seenMessages.current.get(m.match_id) ?? 0)}</span>
+                    )}
+                  </button>
+                )}
               </div>
               {m.response === "accepted" && (
                 <div style={acceptedNotice}>
@@ -283,6 +300,11 @@ export default function DonorDashboardPage() {
           ))
         )}
       </div>
+
+      {/* Chat modal */}
+      {chatMatchId && (
+        <ChatModal matchId={chatMatchId} senderType="donor" senderId={phase.step === "ready" ? phase.donor.donor_id : null} onClose={() => setChatMatchId(null)} />
+      )}
 
       {/* Nav */}
       <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem" }}>
@@ -400,6 +422,19 @@ const acceptBtn: React.CSSProperties = {
 const declineBtn: React.CSSProperties = {
   flex: 1, padding: "0.6rem", border: "1px solid #D1D5DB", borderRadius: 8,
   backgroundColor: "#fff", color: "#6B7280", fontSize: "0.85rem", fontWeight: 500, cursor: "pointer",
+};
+
+const chatBtn: React.CSSProperties = {
+  padding: "0.25rem 0.6rem", border: "1px solid #1B7F79", borderRadius: 6,
+  backgroundColor: "#fff", color: "#1B7F79", fontSize: "0.7rem", fontWeight: 600, cursor: "pointer",
+  marginLeft: "0.5rem", whiteSpace: "nowrap",
+};
+
+const chatBadge: React.CSSProperties = {
+  position: "absolute", top: -6, right: -6, minWidth: 16, height: 16,
+  borderRadius: 8, backgroundColor: "#C8102E", color: "#fff",
+  fontSize: "0.6rem", fontWeight: 700, display: "flex", alignItems: "center",
+  justifyContent: "center", padding: "0 4px",
 };
 
 const emptyCard: React.CSSProperties = {

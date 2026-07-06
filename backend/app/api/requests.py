@@ -22,6 +22,7 @@ from app.models.requester import Requester
 from app.models.donor import Donor
 from app.models.request import Request
 from app.models.match import Match
+from app.models.message import Message
 from app.matching_engine import find_candidate_donors
 from app.notifications import notify_accepted_donor
 from pydantic import BaseModel
@@ -335,6 +336,14 @@ def get_request_matches(request_id: uuid.UUID, db: Session = Depends(get_db)):
     requester = db.get(ReqModel, request.requester_id)
     origin = requester.location if requester else None
 
+    message_count_subq = (
+        select(func.count())
+        .select_from(Message)
+        .where(Message.match_id == Match.match_id)
+        .correlate(Match)
+        .scalar_subquery()
+    )
+
     match_rows = (
         db.execute(
             select(
@@ -351,6 +360,7 @@ def get_request_matches(request_id: uuid.UUID, db: Session = Depends(get_db)):
                 Donor.email.label("donor_email"),
                 Donor.phone.label("donor_phone"),
                 (func.ST_Distance(Donor.location, origin) / 1000).label("distance_km") if origin else func.literal(0).label("distance_km"),
+                message_count_subq.label("message_count"),
             )
             .join(Donor, Match.donor_id == Donor.donor_id)
             .where(Match.request_id == request_id)
@@ -376,6 +386,7 @@ def get_request_matches(request_id: uuid.UUID, db: Session = Depends(get_db)):
             "donor_email": r.donor_email if show_contact else None,
             "donor_phone": r.donor_phone if show_contact else None,
             "distance_km": round(r.distance_km, 1) if r.distance_km else None,
+            "message_count": r.message_count or 0,
         })
 
     return {

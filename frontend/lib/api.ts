@@ -117,6 +117,7 @@ export interface DonorMatchEntry {
   requester_email: string | null;
   requester_phone: string | null;
   distance_km: number | null;
+  message_count: number;
 }
 
 export interface DonorMatchesResponse {
@@ -290,6 +291,7 @@ export interface MatchDetail {
   donor_email?: string;
   donor_phone?: string | null;
   distance_km?: number;
+  message_count: number;
 }
 
 export interface RequestWithMatches extends RequestResponse {

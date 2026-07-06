@@ -7,23 +7,21 @@
  */
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import {
   getCandidateDonors,
   acceptDonor,
   getRequestMatches,
-  getMessages,
-  sendMessage,
   updateRequestStatus,
   type CandidateDonor,
   type RequestWithMatches,
   type MatchDetail,
-  type ChatMessage,
 } from "@/lib/api";
 import { subscribeToMatches } from "@/lib/supabase";
 import LoadingSpinner from "@/components/LoadingSpinner";
 import ErrorBanner from "@/components/ErrorBanner";
+import ChatModal from "@/components/ChatModal";
 import { StatusBadge, UrgencyBadge, LiveIndicator } from "@/components/shared";
 
 const TEAL = "#1B7F79";
@@ -277,9 +275,16 @@ function TrackingView({
   onRefresh: () => void;
 }) {
   const [chatMatchId, setChatMatchId] = useState<string | null>(null);
+  const requesterId = typeof window !== "undefined" ? localStorage.getItem("vitallink_requester_id") ?? "" : "";
+  const seenMessages = useRef<Map<string, number>>(new Map());
 
   const confirmed = request.matches.filter((m) => m.response === "donor_confirmed" || m.response === "contact_shared").length;
   const pending = request.matches.filter((m) => m.response === "accepted_by_requester" || m.response === "pending").length;
+
+  function handleOpenChat(matchId: string, messageCount: number) {
+    seenMessages.current.set(matchId, messageCount);
+    setChatMatchId(matchId);
+  }
 
   return (
     <div style={wrap}>
@@ -316,7 +321,12 @@ function TrackingView({
           {request.matches
             .filter((m) => m.response === "donor_confirmed" || m.response === "contact_shared")
             .map((m) => (
-              <MatchCard key={m.match_id} match={m} onChat={() => setChatMatchId(m.match_id)} />
+              <MatchCard
+                key={m.match_id}
+                match={m}
+                unreadCount={m.message_count - (seenMessages.current.get(m.match_id) ?? 0)}
+                onChat={() => handleOpenChat(m.match_id, m.message_count)}
+              />
             ))}
         </div>
       )}
@@ -339,7 +349,7 @@ function TrackingView({
 
       {/* Chat modal */}
       {chatMatchId && (
-        <ChatModal matchId={chatMatchId} onClose={() => setChatMatchId(null)} />
+        <ChatModal matchId={chatMatchId} senderType="requester" senderId={requesterId} onClose={() => setChatMatchId(null)} />
       )}
 
       <div style={{ marginTop: "1rem" }}>
@@ -388,7 +398,7 @@ function DonorSelectCard({
   );
 }
 
-function MatchCard({ match, onChat }: { match: MatchDetail; onChat: () => void }) {
+function MatchCard({ match, unreadCount, onChat }: { match: MatchDetail; unreadCount: number; onChat: () => void }) {
   const isContactShared = match.response === "contact_shared";
   return (
     <div style={matchCard}>
@@ -415,7 +425,12 @@ function MatchCard({ match, onChat }: { match: MatchDetail; onChat: () => void }
       <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
         <ResponseChip response={match.response} />
         {isContactShared && (
-          <button onClick={onChat} style={chatBtn}>Chat</button>
+          <button onClick={onChat} style={{ ...chatBtn, position: "relative" }}>
+            Chat
+            {unreadCount > 0 && (
+              <span style={chatBadge}>{unreadCount}</span>
+            )}
+          </button>
         )}
       </div>
     </div>
@@ -460,78 +475,6 @@ function ResponseChip({ response }: { response: string }) {
     <span style={{ fontSize: "0.7rem", fontWeight: 600, color: c.fg, backgroundColor: c.bg, padding: "2px 8px", borderRadius: 4, textTransform: "uppercase" as const, whiteSpace: "nowrap" }}>
       {label}
     </span>
-  );
-}
-
-function ChatModal({ matchId, onClose }: { matchId: string; onClose: () => void }) {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [sending, setSending] = useState(false);
-  const requesterId = localStorage.getItem("vitallink_requester_id") ?? "";
-
-  useEffect(() => {
-    setLoading(true);
-    getMessages(matchId)
-      .then((msgs) => { setMessages(msgs); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, [matchId]);
-
-  async function handleSend() {
-    if (!input.trim() || !requesterId) return;
-    setSending(true);
-    try {
-      const msg = await sendMessage(matchId, "requester", requesterId, input.trim());
-      setMessages((prev) => [...prev, msg]);
-      setInput("");
-    } catch { /* retry on next load */ }
-    setSending(false);
-  }
-
-  return (
-    <div style={modalOverlay} onClick={onClose}>
-      <div style={modalContent} onClick={(e) => e.stopPropagation()}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
-          <h3 style={{ margin: 0, fontSize: "1rem", fontWeight: 600 }}>Chat</h3>
-          <button onClick={onClose} style={closeBtn}>&times;</button>
-        </div>
-
-        <div style={chatArea}>
-          {loading ? (
-            <LoadingSpinner label="Loading messages\u2026" />
-          ) : messages.length === 0 ? (
-            <p style={{ color: "#5C6D66", textAlign: "center", padding: "1rem", fontSize: "0.85rem" }}>
-              No messages yet. Say hello!
-            </p>
-          ) : (
-            messages.map((m) => (
-              <div key={m.message_id} style={{
-                ...chatBubble,
-                alignSelf: m.sender_type === "requester" ? "flex-end" : "flex-start",
-                backgroundColor: m.sender_type === "requester" ? TEAL : "#F3F4F6",
-                color: m.sender_type === "requester" ? "#fff" : "#14231F",
-              }}>
-                {m.body}
-              </div>
-            ))
-          )}
-        </div>
-
-        <div style={{ display: "flex", gap: "0.5rem" }}>
-          <input
-            type="text"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") handleSend(); }}
-            placeholder="Type a message..."
-            style={chatInput}
-          />
-          <button onClick={handleSend} disabled={sending || !input.trim()} style={sendBtn}>
-            {sending ? "\u2026" : "\u2191"}
-          </button>
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -621,6 +564,13 @@ const chatBtn: React.CSSProperties = {
   cursor: "pointer",
 };
 
+const chatBadge: React.CSSProperties = {
+  position: "absolute", top: -6, right: -6, minWidth: 16, height: 16,
+  borderRadius: 8, backgroundColor: RED, color: "#fff",
+  fontSize: "0.6rem", fontWeight: 700, display: "flex", alignItems: "center",
+  justifyContent: "center", padding: "0 4px",
+};
+
 const refreshBtn: React.CSSProperties = {
   padding: "0.3rem 0.75rem",
   border: "1px solid #D1D5DB",
@@ -675,78 +625,4 @@ const errorText: React.CSSProperties = {
   borderRadius: 6,
 };
 
-// Chat modal styles
-const modalOverlay: React.CSSProperties = {
-  position: "fixed",
-  inset: 0,
-  backgroundColor: "rgba(0,0,0,0.4)",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-  zIndex: 1000,
-  padding: "1rem",
-};
 
-const modalContent: React.CSSProperties = {
-  width: "100%",
-  maxWidth: 400,
-  maxHeight: "80vh",
-  backgroundColor: "#fff",
-  borderRadius: 12,
-  padding: "1rem",
-  display: "flex",
-  flexDirection: "column",
-  boxShadow: "0 8px 32px rgba(0,0,0,0.15)",
-};
-
-const closeBtn: React.CSSProperties = {
-  background: "none",
-  border: "none",
-  fontSize: "1.5rem",
-  color: "#6B7280",
-  cursor: "pointer",
-  padding: 0,
-  lineHeight: 1,
-};
-
-const chatArea: React.CSSProperties = {
-  flex: 1,
-  overflowY: "auto",
-  display: "flex",
-  flexDirection: "column",
-  gap: "0.5rem",
-  minHeight: 200,
-  maxHeight: 400,
-  padding: "0.5rem 0",
-};
-
-const chatBubble: React.CSSProperties = {
-  maxWidth: "80%",
-  padding: "0.5rem 0.75rem",
-  borderRadius: 12,
-  fontSize: "0.85rem",
-  lineHeight: 1.4,
-};
-
-const chatInput: React.CSSProperties = {
-  flex: 1,
-  padding: "0.5rem 0.75rem",
-  border: "1px solid #D1D5DB",
-  borderRadius: 8,
-  fontSize: "0.85rem",
-};
-
-const sendBtn: React.CSSProperties = {
-  width: 36,
-  height: 36,
-  borderRadius: 8,
-  border: "none",
-  backgroundColor: TEAL,
-  color: "#fff",
-  fontSize: "1rem",
-  fontWeight: 700,
-  cursor: "pointer",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-};

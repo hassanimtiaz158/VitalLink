@@ -19,6 +19,7 @@ from app.models.request import Request
 from app.models.match import Match
 from app.models.requester import Requester
 from app.models.block import Block
+from app.models.message import Message
 from app.api.schemas import DonorCreate, DonorResponse, AvailabilityUpdate, BlockCreate
 
 router = APIRouter(prefix="/donors", tags=["donors"])
@@ -136,6 +137,14 @@ def get_donor_matches(donor_id: uuid.UUID, db: Session = Depends(get_db)):
     if not donor:
         raise HTTPException(status_code=404, detail="Donor not found")
 
+    message_count_subq = (
+        select(func.count())
+        .select_from(Message)
+        .where(Message.match_id == Match.match_id)
+        .correlate(Match)
+        .scalar_subquery()
+    )
+
     rows = (
         db.execute(
             select(
@@ -155,6 +164,7 @@ def get_donor_matches(donor_id: uuid.UUID, db: Session = Depends(get_db)):
                 Requester.email.label("requester_email"),
                 Requester.phone.label("requester_phone"),
                 func.ST_Distance(Donor.location, Requester.location).label("distance_m"),
+                message_count_subq.label("message_count"),
             )
             .join(Request, Match.request_id == Request.request_id)
             .join(Requester, Request.requester_id == Requester.requester_id)
@@ -187,6 +197,7 @@ def get_donor_matches(donor_id: uuid.UUID, db: Session = Depends(get_db)):
             "requester_email": r.requester_email if show_contact else None,
             "requester_phone": r.requester_phone if show_contact else None,
             "distance_km": round(r.distance_m / 1000, 1) if r.distance_m else None,
+            "message_count": r.message_count or 0,
         }
         if r.response in ("pending", "accepted_by_requester"):
             pending.append(entry)
