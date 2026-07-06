@@ -12,7 +12,7 @@ GET    /requests/stats/supply          — Aggregated donor supply levels.
 import secrets
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy import Integer, cast, func, select
 from sqlalchemy.orm import Session
 from geoalchemy2 import Geometry
@@ -118,6 +118,7 @@ def get_candidate_donors(request_id: uuid.UUID, db: Session = Depends(get_db)):
 def accept_donor(
     request_id: uuid.UUID,
     donor_id: uuid.UUID,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
     """Requester accepts a specific donor from the candidate list.
@@ -162,22 +163,34 @@ def accept_donor(
 
     db.flush()  # Assign match_id
 
-    # Send notification email to donor
+    # Send notification email in background (non-blocking)
     from app.core.config import settings
     requester = db.get(Requester, request.requester_id)
     requester_name = requester.name if requester else "Someone"
 
-    try:
-        notify_accepted_donor(
-            match=match,
-            donor=donor,
-            request=request,
-            requester_name=requester_name,
-            db=db,
-        )
-    except Exception:
-        import logging
-        logging.getLogger(__name__).exception("Failed to send notification to donor %s", donor_id)
+    match_copy = match
+    donor_copy = donor
+    request_copy = request
+
+    def _send_notification():
+        from app.core.database import SessionLocal
+        _db = SessionLocal()
+        try:
+            notify_accepted_donor(
+                match=_db.merge(match_copy),
+                donor=_db.merge(donor_copy),
+                request=_db.merge(request_copy),
+                requester_name=requester_name,
+                db=_db,
+            )
+            _db.commit()
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception("Failed to send notification to donor %s", donor_id)
+        finally:
+            _db.close()
+
+    background_tasks.add_task(_send_notification)
 
     # Update request status
     request.status = "donor_accepted"

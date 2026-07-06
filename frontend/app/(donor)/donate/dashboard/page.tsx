@@ -73,9 +73,18 @@ export default function DonorDashboardPage() {
     });
 
     // Polling fallback: refresh every 5s even if Supabase Realtime is unavailable
+    let prevPendingCount = phase.step === "ready" ? phase.matches.pending.length : 0;
     const pollId = setInterval(() => {
       getDonorMatches(donorId).then((updated) => {
-        setPhase((prev) => (prev.step === "ready" ? { ...prev, matches: updated } : prev));
+        setPhase((prev) => {
+          if (prev.step !== "ready") return prev;
+          if (updated.pending.length > prevPendingCount) {
+            setNewMatchAlert(true);
+            setTimeout(() => setNewMatchAlert(false), 5000);
+          }
+          prevPendingCount = updated.pending.length;
+          return { ...prev, matches: updated };
+        });
       }).catch(() => {});
     }, 5000);
 
