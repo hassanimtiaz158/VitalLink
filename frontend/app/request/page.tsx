@@ -137,6 +137,14 @@ export default function RequestPage() {
 
       setPhase({ step: "success", requester, request });
     } catch (err: any) {
+      if (
+        err.message?.includes("Requester not found") &&
+        localStorage.getItem("vitallink_requester_id")
+      ) {
+        localStorage.removeItem("vitallink_requester_id");
+        localStorage.removeItem("vitallink_requester_name");
+        localStorage.removeItem("vitallink_requester_email");
+      }
       setPhase({ step: "error", message: err.message ?? "Request failed" });
     }
   }
