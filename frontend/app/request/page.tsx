@@ -53,7 +53,7 @@ export default function RequestPage() {
     if (remail) setEmail(remail);
   }, []);
 
-  async function tryGeolocation(): Promise<boolean> {
+  async function tryGeolocation(): Promise<{ latitude: number; longitude: number } | null> {
     setPhase({ step: "locating" });
     setGeoError(null);
     const result = await getCurrentPosition();
@@ -61,34 +61,34 @@ export default function RequestPage() {
       setLat(result.position.latitude);
       setLng(result.position.longitude);
       setGeoError(null);
-      return true;
+      return result.position;
     }
     setGeoError(result.error);
-    return false;
+    return null;
   }
 
-  async function tryGeocode(): Promise<boolean> {
-    if (!manualAddress.trim()) return false;
+  async function tryGeocode(): Promise<{ latitude: number; longitude: number } | null> {
+    if (!manualAddress.trim()) return null;
     setPhase({ step: "geocoding" });
     const pos = await geocodeAddress(manualAddress);
     if (pos) {
       setLat(pos.latitude);
       setLng(pos.longitude);
       setGeoError(null);
-      return true;
+      return pos;
     }
-    return false;
+    return null;
   }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
 
-    let located = await tryGeolocation();
-    if (!located && manualAddress.trim()) {
-      located = await tryGeocode();
+    let location = await tryGeolocation();
+    if (!location && manualAddress.trim()) {
+      location = await tryGeocode();
     }
 
-    if (!located) {
+    if (!location) {
       setPhase({
         step: "error",
         message: geoError
@@ -111,8 +111,8 @@ export default function RequestPage() {
           name,
           email,
           phone: phone || null,
-          latitude: lat!,
-          longitude: lng!,
+          latitude: location.latitude,
+          longitude: location.longitude,
           created_at: new Date().toISOString(),
         };
       } else {
@@ -120,8 +120,8 @@ export default function RequestPage() {
           name,
           email,
           phone: phone || null,
-          latitude: lat!,
-          longitude: lng!,
+          latitude: location.latitude,
+          longitude: location.longitude,
         });
         localStorage.setItem("vitallink_requester_id", requester.requester_id);
         localStorage.setItem("vitallink_requester_name", name);

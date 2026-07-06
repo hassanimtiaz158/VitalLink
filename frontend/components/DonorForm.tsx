@@ -35,7 +35,7 @@ export default function DonorForm() {
   const [lat, setLat] = useState<number | null>(null);
   const [lng, setLng] = useState<number | null>(null);
 
-  async function tryGeolocation(): Promise<boolean> {
+  async function tryGeolocation(): Promise<{ latitude: number; longitude: number } | null> {
     setStatus({ state: "locating" });
     setGeoError(null);
     const result = await getCurrentPosition();
@@ -43,37 +43,37 @@ export default function DonorForm() {
       setLat(result.position.latitude);
       setLng(result.position.longitude);
       setGeoError(null);
-      return true;
+      return result.position;
     }
     setGeoError(result.error);
-    return false;
+    return null;
   }
 
-  async function tryGeocode(): Promise<boolean> {
-    if (!manualAddress.trim()) return false;
+  async function tryGeocode(): Promise<{ latitude: number; longitude: number } | null> {
+    if (!manualAddress.trim()) return null;
     setStatus({ state: "geocoding" });
     const pos = await geocodeAddress(manualAddress);
     if (pos) {
       setLat(pos.latitude);
       setLng(pos.longitude);
       setGeoError(null);
-      return true;
+      return pos;
     }
-    return false;
+    return null;
   }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
 
     // 1. Try browser geolocation first (may fail on localhost / HTTP).
-    let located = await tryGeolocation();
+    let location = await tryGeolocation();
 
     // 2. Fall back to manual address geocoding.
-    if (!located && manualAddress.trim()) {
-      located = await tryGeocode();
+    if (!location && manualAddress.trim()) {
+      location = await tryGeocode();
     }
 
-    if (!located) {
+    if (!location) {
       setStatus({
         state: "error",
         message: geoError
@@ -91,8 +91,8 @@ export default function DonorForm() {
         email,
         phone: phone || null,
         blood_type: bloodType,
-        latitude: lat!,
-        longitude: lng!,
+        latitude: location.latitude,
+        longitude: location.longitude,
         available,
       });
       // Set localStorage immediately so dashboard guard can find it
