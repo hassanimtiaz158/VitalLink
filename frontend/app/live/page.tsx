@@ -1,8 +1,7 @@
 /**
  * Public live dashboard — real-time overview of all active requests.
  *
- * Displays SupplyCards (blood inventory levels), LiveMap (Leaflet.js
- * map with urgency-coloured markers), ActivityFeed (recent requests),
+ * Displays SupplyCards (blood inventory levels), ActivityFeed (recent requests),
  * and RequestQueue (tabular view with progress bars). All data refreshes
  * via Supabase Realtime subscriptions.
  */
@@ -12,14 +11,11 @@ import { useEffect, useState, useCallback } from "react";
 import {
   getActiveRequestsFeed,
   getSupplyStats,
-  listDonors,
   type ActiveRequest,
   type SupplyStat,
-  type DonorResponse,
 } from "@/lib/api";
 import { subscribeToNewRequests } from "@/lib/supabase";
 import SupplyCards from "@/components/SupplyCards";
-import LiveMap from "@/components/LiveMap";
 import ActivityFeed from "@/components/ActivityFeed";
 import RequestQueue from "@/components/RequestQueue";
 import LoadingSpinner from "@/components/LoadingSpinner";
@@ -29,7 +25,7 @@ import EmptyState from "@/components/EmptyState";
 type LoadState =
   | { phase: "loading" }
   | { phase: "error"; message: string }
-  | { phase: "ready"; requests: ActiveRequest[]; stats: SupplyStat[]; donors: DonorResponse[] };
+  | { phase: "ready"; requests: ActiveRequest[]; stats: SupplyStat[] };
 
 export default function LiveDashboard() {
   const [state, setState] = useState<LoadState>({ phase: "loading" });
@@ -37,14 +33,7 @@ export default function LiveDashboard() {
   const fetchData = useCallback(async () => {
     try {
       const [reqs, s] = await Promise.all([getActiveRequestsFeed(), getSupplyStats()]);
-      // Fetch donors separately — don't block the map if this is slow
-      let d: DonorResponse[] = [];
-      try {
-        d = await listDonors();
-      } catch {
-        // Donors failed to load — map still works with requests only
-      }
-      setState({ phase: "ready", requests: reqs, stats: s, donors: d });
+      setState({ phase: "ready", requests: reqs, stats: s });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Failed to load dashboard data";
       setState({ phase: "error", message: msg });
@@ -124,7 +113,7 @@ export default function LiveDashboard() {
   }
 
   // --- Ready state ---
-  const { requests, stats, donors } = state;
+  const { requests, stats } = state;
   const criticalCount = requests.filter((r) => r.urgency === "critical").length;
 
   return (
@@ -166,30 +155,11 @@ export default function LiveDashboard() {
         />
       )}
 
-      {/* Map + Feed */}
-      <div style={mainGrid}>
-        <div style={panel}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
-            <div>
-              <h2 style={panelTitle}>Active requests near you</h2>
-              <p style={panelSub}>Auto-centers on your location &middot; donor addresses are never shown</p>
-            </div>
-          </div>
-          {requests.length > 0 || donors.length > 0 ? (
-            <LiveMap requests={requests} donors={donors} />
-          ) : (
-            <EmptyState
-              icon="&#128205;"
-              title="No active requests"
-              message="Blood requests will appear on the map as they are posted."
-            />
-          )}
-        </div>
-        <div style={panel}>
-          <h2 style={panelTitle}>Live activity feed</h2>
-          <p style={panelSub}>Matching + notification events, most recent first</p>
-          <ActivityFeed requests={requests} />
-        </div>
+      {/* Feed */}
+      <div style={panel}>
+        <h2 style={panelTitle}>Live activity feed</h2>
+        <p style={panelSub}>Matching + notification events, most recent first</p>
+        <ActivityFeed requests={requests} />
       </div>
 
       {/* Request queue */}
@@ -269,14 +239,6 @@ const sectionLabel: React.CSSProperties = {
   letterSpacing: "0.08em",
   color: "#5C6D66",
   margin: "0 0 12px",
-};
-
-const mainGrid: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "1.5fr 1fr",
-  gap: 20,
-  marginBottom: 28,
-  alignItems: "start",
 };
 
 const panel: React.CSSProperties = {
