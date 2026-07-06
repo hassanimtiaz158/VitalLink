@@ -172,7 +172,7 @@ def notify_accepted_donor(
     distance_km = 0.0
     if requester:
         distance_m = db.execute(
-            select(func.ST_Distance(Donor.location, requester.location))
+            select(func.ST_Distance(donor.location, requester.location))
         ).scalar()
         distance_km = round(distance_m / 1000, 1) if distance_m else 0.0
 

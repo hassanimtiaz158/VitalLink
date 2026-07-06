@@ -158,6 +158,7 @@ def get_donor_matches(donor_id: uuid.UUID, db: Session = Depends(get_db)):
             )
             .join(Request, Match.request_id == Request.request_id)
             .join(Requester, Request.requester_id == Requester.requester_id)
+            .join(Donor, Match.donor_id == Donor.donor_id)
             .where(Match.donor_id == donor_id)
             .order_by(Match.notified_at.desc().nullslast())
         )

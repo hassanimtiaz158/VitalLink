@@ -41,12 +41,25 @@ export default function RequestDashboardPage() {
   const [acceptingId, setAcceptingId] = useState<string | null>(null);
   const [acceptError, setAcceptError] = useState<string | null>(null);
 
+  const refreshRequest = useCallback(async (requestId: string) => {
+    try {
+      const request = await getRequestMatches(requestId);
+      if (request.matched_donors === 0) {
+        const candidates = await getCandidateDonors(requestId);
+        setPhase({ step: "selecting", candidates, request });
+      } else {
+        setPhase({ step: "tracking", request });
+      }
+    } catch {
+      // silent
+    }
+  }, []);
+
   const loadRequest = useCallback(async (requestId: string) => {
     setPhase({ step: "loading" });
     try {
       const request = await getRequestMatches(requestId);
       if (request.matched_donors === 0) {
-        // No matches yet — fetch candidates
         const candidates = await getCandidateDonors(requestId);
         setPhase({ step: "selecting", candidates, request });
       } else {
@@ -72,11 +85,10 @@ export default function RequestDashboardPage() {
     if (phase.step === "tracking") {
       const reqId = phase.request.request_id;
       const unsub = subscribeToMatches(reqId, () => {
-        loadRequest(reqId);
+        refreshRequest(reqId);
       });
-      // Polling fallback: refresh every 5s even if Supabase Realtime is unavailable
       const pollId = setInterval(() => {
-        loadRequest(reqId);
+        refreshRequest(reqId);
       }, 5000);
       return () => {
         unsub();
