@@ -117,12 +117,10 @@ export default function DonorForm() {
     <form onSubmit={handleSubmit} style={cardStyle}>
       <h2 style={headingStyle}>Donor Registration</h2>
 
-      {/* Location hint for localhost */}
-      {typeof window !== "undefined" && window.location.protocol === "http:" && (
-        <p style={{ fontSize: "0.8rem", color: "#5C6D66", backgroundColor: "#F0FAF8", padding: "0.5rem 0.75rem", borderRadius: 6, margin: "0 0 1rem", lineHeight: 1.4 }}>
-          Running on localhost? Browser location may be unavailable. Enter your address manually below.
-        </p>
-      )}
+      {/* Location notice */}
+      <p style={{ fontSize: "0.8rem", color: "#92400e", backgroundColor: "#FEF3C7", padding: "0.5rem 0.75rem", borderRadius: 6, margin: "0 0 1rem", lineHeight: 1.4 }}>
+        Location is required to use this platform. Grant browser location access or enter your address below.
+      </p>
 
       {/* Name */}
       <label style={labelStyle}>
@@ -189,7 +187,7 @@ export default function DonorForm() {
 
       {/* Manual Address Fallback */}
       <label style={labelStyle}>
-        Address {geoError && <span style={{ fontWeight: 400, color: "#92400e" }}>(required — browser location unavailable on this device)</span>}
+        Address <span style={{ fontWeight: 400, color: "#92400e" }}>(required)</span>
         <input
           type="text"
           value={manualAddress}
