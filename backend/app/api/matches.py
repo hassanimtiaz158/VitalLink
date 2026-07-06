@@ -26,19 +26,12 @@ def _recompute_request_status(request: Request, db: Session) -> None:
     """Recompute request.status based on match states.
 
     State machine:
-      open → donor_accepted → donor_confirmed → contact_shared → fulfilled → closed
+      open → donor_accepted → contact_shared → fulfilled → closed
     """
     accepted_count = db.execute(
         select(func.count()).where(
             Match.request_id == request.request_id,
-            Match.response.in_(["accepted_by_requester", "donor_confirmed", "contact_shared"]),
-        )
-    ).scalar()
-
-    confirmed_count = db.execute(
-        select(func.count()).where(
-            Match.request_id == request.request_id,
-            Match.response.in_(["donor_confirmed", "contact_shared"]),
+            Match.response.in_(["accepted_by_requester", "contact_shared"]),
         )
     ).scalar()
 
@@ -49,8 +42,8 @@ def _recompute_request_status(request: Request, db: Session) -> None:
         )
     ).scalar()
 
-    if confirmed_count >= request.units_needed:
-        request.status = "donor_confirmed"
+    if shared_count > 0:
+        request.status = "contact_shared"
     elif accepted_count > 0:
         request.status = "donor_accepted"
 
@@ -86,36 +79,12 @@ def respond_to_match(
         raise HTTPException(status_code=400, detail="Match already responded to")
 
     if response == "accepted":
-        match.response = "donor_confirmed"
+        match.response = "contact_shared"
         match.confirmed_at = datetime.now(timezone.utc)
+        match.contact_shared_at = datetime.now(timezone.utc)
 
-        # Check if enough donors confirmed to share contact
         request = db.get(Request, match.request_id)
-        confirmed_count = db.execute(
-            select(func.count()).where(
-                Match.request_id == match.request_id,
-                Match.response.in_(["donor_confirmed", "contact_shared"]),
-            )
-        ).scalar()
-
-        if confirmed_count >= request.units_needed:
-            # Share contact info for all confirmed matches
-            confirmed_matches = db.execute(
-                select(Match).where(
-                    Match.request_id == match.request_id,
-                    Match.response == "donor_confirmed",
-                )
-            ).scalars().all()
-            for m in confirmed_matches:
-                m.response = "contact_shared"
-                m.contact_shared_at = datetime.now(timezone.utc)
-            # Also update this match if it wasn't in the query
-            if match.response == "donor_confirmed":
-                match.response = "contact_shared"
-                match.contact_shared_at = datetime.now(timezone.utc)
-            request.status = "contact_shared"
-        else:
-            request.status = "donor_confirmed"
+        request.status = "contact_shared"
     else:
         match.response = "declined"
         request = db.get(Request, match.request_id)

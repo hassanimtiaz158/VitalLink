@@ -204,7 +204,7 @@ def get_donor_matches(donor_id: uuid.UUID, db: Session = Depends(get_db)):
         else:
             history.append(entry)
 
-    accepted_count = sum(1 for r in rows if r.response in ("donor_confirmed", "contact_shared"))
+    accepted_count = sum(1 for r in rows if r.response == "contact_shared")
     total_notified = len(rows)
 
     return {

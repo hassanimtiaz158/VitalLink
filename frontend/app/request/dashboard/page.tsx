@@ -278,7 +278,7 @@ function TrackingView({
   const requesterId = typeof window !== "undefined" ? localStorage.getItem("vitallink_requester_id") ?? "" : "";
   const seenMessages = useRef<Map<string, number>>(new Map());
 
-  const confirmed = request.matches.filter((m) => m.response === "donor_confirmed" || m.response === "contact_shared").length;
+  const confirmed = request.matches.filter((m) => m.response === "contact_shared").length;
   const pending = request.matches.filter((m) => m.response === "accepted_by_requester" || m.response === "pending").length;
 
   function handleOpenChat(matchId: string, messageCount: number) {
@@ -319,7 +319,7 @@ function TrackingView({
             Confirmed donors ({confirmed})
           </h3>
           {request.matches
-            .filter((m) => m.response === "donor_confirmed" || m.response === "contact_shared")
+            .filter((m) => m.response === "contact_shared")
             .map((m) => (
               <MatchCard
                 key={m.match_id}
@@ -465,7 +465,6 @@ function ResponseChip({ response }: { response: string }) {
   const colors: Record<string, { bg: string; fg: string }> = {
     pending: { bg: "#F3F4F6", fg: "#6B7280" },
     accepted_by_requester: { bg: "#FEF3C7", fg: "#92400e" },
-    donor_confirmed: { bg: "#E4F1EE", fg: "#1B7F79" },
     contact_shared: { bg: "#E4F1EE", fg: "#1B7F79" },
     declined: { bg: "#FEE2E2", fg: "#7A0A1D" },
   };

@@ -1,7 +1,7 @@
 """Match model — links a request to a specific donor with response tracking.
 
 State flow:
-  pending → accepted_by_requester → donor_confirmed → contact_shared
+  pending → accepted_by_requester → contact_shared
 
 Once both sides confirm, contact info is revealed and chat is enabled.
 """

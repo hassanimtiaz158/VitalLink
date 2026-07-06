@@ -1,7 +1,7 @@
 """Request model — blood shortage requests submitted by individuals.
 
 State machine:
-  open → donor_accepted → donor_confirmed → contact_shared → fulfilled → closed
+  open → donor_accepted → contact_shared → fulfilled → closed
 
 Each request has a requester_id (the person needing blood) and is matched
 to compatible donors via PostGIS proximity search.

@@ -271,8 +271,8 @@ export default function DonorDashboardPage() {
           history.map((m) => (
             <div key={m.match_id}>
               <div style={historyRow}>
-                <div style={{ width: 28, height: 28, borderRadius: 6, backgroundColor: m.response === "accepted" ? "#E4F1EE" : "#F3F4F6", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: "0.75rem" }}>
-                  {m.response === "accepted" ? "\u2713" : "\u2717"}
+                <div style={{ width: 28, height: 28, borderRadius: 6, backgroundColor: m.response === "contact_shared" ? "#E4F1EE" : "#F3F4F6", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: "0.75rem" }}>
+                  {m.response === "contact_shared" ? "\u2713" : "\u2717"}
                 </div>
                 <div style={{ flex: 1 }}>
                   <span style={{ fontWeight: 600, fontSize: "0.85rem" }}>{m.blood_type}</span>
@@ -280,8 +280,8 @@ export default function DonorDashboardPage() {
                     {m.requester_name ?? "Requester"} &middot; {m.distance_km ?? "?"} km
                   </span>
                 </div>
-                <span style={{ fontSize: "0.7rem", color: m.response === "accepted" ? TEAL : "#9CA3AF", fontWeight: 600, textTransform: "uppercase" as const }}>
-                  {m.response}
+                <span style={{ fontSize: "0.7rem", color: m.response === "contact_shared" ? TEAL : "#9CA3AF", fontWeight: 600, textTransform: "uppercase" as const }}>
+                  {m.response === "contact_shared" ? "confirmed" : m.response}
                 </span>
                 {m.response === "contact_shared" && (
                   <button
@@ -298,10 +298,10 @@ export default function DonorDashboardPage() {
                   </button>
                 )}
               </div>
-              {m.response === "accepted" && (
+              {m.response === "contact_shared" && (
                 <div style={acceptedNotice}>
                   <span style={{ fontSize: "0.8rem", color: "#1B7F79" }}>
-                    The requester has been notified. Check your email for contact details to coordinate your donation.
+                    Contact info shared. Use Chat to coordinate your donation.
                   </span>
                 </div>
               )}
